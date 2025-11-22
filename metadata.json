@@ -1,0 +1,9 @@
+{
+  "name": "RuCord",
+  "description": "Современная версия чат-платформы с интеграцией Gemini AI, обновленным интерфейсом и поддержкой голосового UI.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera",
+    "display-capture"
+  ]
+}
