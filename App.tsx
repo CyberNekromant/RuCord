@@ -189,6 +189,16 @@ const App: React.FC = () => {
       setActiveServerId(INITIAL_SERVERS[0].id);
   };
 
+  const handleUpdateProfile = (updates: Partial<User>) => {
+      const updatedUser = { ...currentUser, ...updates };
+      setCurrentUser(updatedUser);
+
+      // Update in local storage users list
+      const users = JSON.parse(localStorage.getItem('rucord_users') || '[]');
+      const updatedUsers = users.map((u: User) => u.id === currentUser.id ? updatedUser : u);
+      localStorage.setItem('rucord_users', JSON.stringify(updatedUsers));
+  };
+
 
   // Derived state
   const activeServer = useMemo(() => 
@@ -728,6 +738,7 @@ const App: React.FC = () => {
         onClose={() => setIsSettingsOpen(false)}
         currentUser={currentUser}
         onLogout={handleLogout}
+        onUpdateProfile={handleUpdateProfile}
         selectedMicId={selectedMicId}
         selectedCamId={selectedCamId}
         selectedSpeakerId={selectedSpeakerId}

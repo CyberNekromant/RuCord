@@ -1,6 +1,7 @@
+
 import React from 'react';
 import { Server } from '../types';
-import { Plus } from 'lucide-react';
+import { Plus, Compass } from 'lucide-react';
 import { LOGO_URL } from '../constants';
 
 interface ServerListProps {
@@ -12,7 +13,7 @@ interface ServerListProps {
 const ServerList: React.FC<ServerListProps> = ({ servers, activeServerId, onSelectServer }) => {
   return (
     <div className="w-[72px] h-full flex flex-col items-center py-3 gap-3 overflow-y-auto shrink-0 z-20 scrollbar-hide bg-black/20 backdrop-blur-md border-r border-white/5">
-      {/* Home Button (Using Custom Logo) */}
+      {/* Home Button (Direct Messages) */}
       <div className="relative w-full flex justify-center group">
           <div 
              className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 bg-white rounded-r-full transition-all duration-300 ease-out
@@ -23,11 +24,7 @@ const ServerList: React.FC<ServerListProps> = ({ servers, activeServerId, onSele
               ${activeServerId === 'home' ? 'bg-blurple-500 rounded-[16px] shadow-blurple-500/30' : 'bg-gray-800/80 hover:bg-blurple-500'}`}
             onClick={() => onSelectServer('home')}
           >
-            <img 
-              src={LOGO_URL} 
-              alt="Home" 
-              className="w-8 h-8 object-contain transition-transform duration-300 group-hover:scale-110" 
-            />
+            <Compass size={28} className="text-gray-100 transition-transform duration-300 group-hover:scale-110" />
           </button>
       </div>
 

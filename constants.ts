@@ -1,9 +1,34 @@
 
 import { Server, User, ChannelType, Message, Channel } from './types';
 
-// Логотип приложения (Векторная версия Neon Cat RuCord)
-// Используем Data URI, чтобы логотип работал без внешнего хостинга
-export const LOGO_URL = `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj48ZGVmcz><bGluZWFyR3JhZGllbnQgaWQ9ImdyYWQiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPjxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMwZWE1ZTk7c3RvcC1vcGFjaXR5OjEiIC8+PHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojZWM0ODk5O3N0b3Atb3BhY2l0eToxIiAvPjwvbGluZWFyR3JhZGllbnQ+PC9kZWZzPjxyZWN0IHg9IjMyIiB5PSIzMiIgd2lkdGg9NDQ4IiBoZWlnaHQ9NDQ4IiByeD0iMTIwIiBmaWxsPSJ1cmwoI2dyYWQpIiAvPjwhLS0gQ2F0IEZhY2UgLS0+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTEyMCAzMjAgTDE1MCAxNzAgTDIxMCAyMzAgTDMwMiAyMzAgMzYyIDE3MCAzOTIgMzIwIEM0MTAgMzYwIDQxMCA0MjAgMzYwIDQ1MCBDMzIwIDQ5MCAxOTIgNDkwIDE1MiA0NTAgQzEwMiA0MjAgMTAyIDM2MCAxMjAgMzIwIFoiIC8+PCEtLSBFeWVzIC0tPjxjaXJjbGUgY3g9IjIwMCIgY3k9IjMzMCIgcj0iMjUiIGZpbGw9IiMzYjgyZjYiIC8+PGNpcmNsZSBjeD0iMzEyIiBjeT0iMzMwIiByPSIyNSIgZmlsbD0iIzNiODJmNiIgLz48cGF0aCBkPSJNMjQ1IDM4MCBRMjU2IDM5MCAyNjcgMzgwIiBzdHJva2U9IiMzYjgyZjYiIHN0cm9rZS13aWR0aD0iNSIgZmlsbD0ibm9uZSIgLz48L3N2Zz4=`;
+// Логотип приложения: Векторный Неоновый Кот (RuCord Logo)
+// Используем Base64 кодирование, чтобы избежать проблем с символами # и спецсимволами в URL
+const svgString = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06b6d4"/>
+      <stop offset="50%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#ec4899"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+  <rect x="32" y="32" width="448" height="448" rx="120" fill="url(#grad)" stroke="#ffffff" stroke-width="8" stroke-opacity="0.1"/>
+  <path fill="#ffffff" d="M 130 340 L 150 160 L 220 230 L 292 230 L 362 160 L 382 340 C 400 410 350 450 256 450 C 162 450 112 410 130 340 Z" filter="url(#glow)"/>
+  <circle cx="200" cy="330" r="28" fill="#1e1b4b"/>
+  <circle cx="312" cy="330" r="28" fill="#1e1b4b"/>
+  <circle cx="200" cy="330" r="12" fill="#06b6d4" filter="url(#glow)"/>
+  <circle cx="312" cy="330" r="12" fill="#06b6d4" filter="url(#glow)"/>
+  <path d="M 245 380 Q 256 390 267 380" fill="none" stroke="#1e1b4b" stroke-width="6" stroke-linecap="round"/>
+</svg>
+`;
+
+// Функция для кодирования в Base64 с поддержкой кириллицы/юникода (на всякий случай)
+const b64 = btoa(unescape(encodeURIComponent(svgString)));
+export const LOGO_URL = `data:image/svg+xml;base64,${b64}`;
 
 export const CURRENT_USER: User = {
   id: 'me',

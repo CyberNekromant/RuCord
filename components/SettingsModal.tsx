@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { X, Mic, Video, Volume2, LogOut, User as UserIcon, Laptop, Play } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Mic, Video, Volume2, LogOut, User as UserIcon, Laptop, Play, Pencil, Camera } from 'lucide-react';
 import { User } from '../types';
 import { soundService } from '../services/soundService';
 
@@ -9,6 +9,7 @@ interface SettingsModalProps {
   onClose: () => void;
   currentUser: User;
   onLogout: () => void;
+  onUpdateProfile: (updates: Partial<User>) => void;
   // Device State
   selectedMicId: string;
   selectedCamId: string;
@@ -23,6 +24,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   currentUser,
   onLogout,
+  onUpdateProfile,
   selectedMicId,
   selectedCamId,
   selectedSpeakerId,
@@ -37,6 +39,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     speakers: MediaDeviceInfo[];
   }>({ mics: [], cams: [], speakers: [] });
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (isOpen) {
       navigator.mediaDevices.enumerateDevices().then(devs => {
@@ -48,6 +52,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       });
     }
   }, [isOpen]);
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+          if (file.size > 1024 * 1024 * 2) { // 2MB limit
+              alert("Файл слишком большой. Пожалуйста, выберите изображение менее 2 МБ.");
+              return;
+          }
+          
+          const reader = new FileReader();
+          reader.onloadend = () => {
+              if (typeof reader.result === 'string') {
+                  onUpdateProfile({ avatarUrl: reader.result });
+              }
+          };
+          reader.readAsDataURL(file);
+      }
+  };
 
   if (!isOpen) return null;
 
@@ -187,20 +209,36 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <h2 className="text-xl font-bold text-white mb-6">Моя учетная запись</h2>
                 
                 <div className="bg-gray-900 rounded-lg p-4 border border-gray-800 flex items-center gap-4 mb-6">
-                   <div className="relative">
-                     <img src={currentUser.avatarUrl} className="w-20 h-20 rounded-full bg-gray-800" alt="Avatar" />
+                   <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                     <img src={currentUser.avatarUrl} className="w-20 h-20 rounded-full bg-gray-800 object-cover" alt="Avatar" />
                      <div className={`absolute bottom-0 right-0 w-5 h-5 rounded-full border-4 border-gray-900 
                         ${currentUser.status === 'online' ? 'bg-green-500' : 
                           currentUser.status === 'idle' ? 'bg-yellow-500' :
                           currentUser.status === 'dnd' ? 'bg-red-500' : 'bg-gray-500'}`} 
                      />
+                     {/* Hover Overlay */}
+                     <div className="absolute inset-0 bg-black/60 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                        <Camera size={24} className="text-white" />
+                        <span className="text-[10px] text-white absolute bottom-3 font-bold">ИЗМЕНИТЬ</span>
+                     </div>
+                     <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        hidden 
+                        accept="image/*"
+                        onChange={handleAvatarChange}
+                     />
                    </div>
+
                    <div className="flex-1">
                       <div className="text-2xl font-bold text-white">{currentUser.username}</div>
                       <div className="text-gray-400 text-sm">#{currentUser.id.substring(0, 8)}</div>
                    </div>
-                   <button className="bg-blurple-500 hover:bg-blurple-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
-                      Редактировать
+                   <button 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="bg-blurple-500 hover:bg-blurple-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
+                   >
+                      Редактировать профиль
                    </button>
                 </div>
 
