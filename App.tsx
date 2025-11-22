@@ -570,7 +570,7 @@ const App: React.FC = () => {
         />
 
         {/* Main Content */}
-        <div className="flex-1 flex flex-col min-w-0 relative bg-white/5">
+        <div className="flex-1 flex flex-col min-w-0 relative bg-white/5 min-h-0 overflow-hidden">
           {/* CALL OVERLAY */}
           {showCallOverlay ? (
               <div className="flex-1 bg-black relative flex flex-col p-0 overflow-hidden">

@@ -46,9 +46,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   // Attachment State
   const [attachments, setAttachments] = useState<{file: File, previewUrl: string}[]>([]);
 
+  // Scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, attachments.length]);
+  }, [messages.length, attachments.length, isTyping]);
 
   useEffect(() => {
     // Clear UI states when switching channels
@@ -158,10 +159,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const otherUser = otherUserId ? users[otherUserId] : null;
 
   return (
-    <div className="flex-1 flex flex-col h-full min-w-0 relative bg-transparent">
+    <div className="flex flex-col h-full min-w-0 min-h-0 relative bg-transparent">
       <input type="file" ref={fileInputRef} hidden onChange={handleFileSelect} />
       
-      {/* Floating Header */}
+      {/* Header */}
       <div className="h-16 px-6 flex items-center justify-between shrink-0 z-10 glass-header">
         <div className="flex items-center gap-3 overflow-hidden">
           {isDM && otherUser ? (
@@ -218,182 +219,187 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         </div>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 custom-scrollbar flex flex-col">
-        {messages.length === 0 ? (
-            <div className="mt-auto mb-8 mx-4">
-                {isDM && otherUser ? (
-                    <div className="flex flex-col items-start">
-                        <div className="w-24 h-24 rounded-full mb-4 p-1 bg-gradient-to-br from-blurple-500 to-pink-500">
-                            <img src={otherUser.avatarUrl} className="w-full h-full rounded-full border-4 border-gray-900" />
+      {/* Messages Scroll Container */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
+        <div className="flex flex-col min-h-full justify-end px-4 py-4 space-y-1">
+            
+            {/* Welcome / Empty State */}
+            {messages.length === 0 && (
+                <div className="mt-4 mb-8 mx-4">
+                    {isDM && otherUser ? (
+                        <div className="flex flex-col items-start">
+                            <div className="w-24 h-24 rounded-full mb-4 p-1 bg-gradient-to-br from-blurple-500 to-pink-500">
+                                <img src={otherUser.avatarUrl} className="w-full h-full rounded-full border-4 border-gray-900" />
+                            </div>
+                            <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400 mb-2">{otherUser.username}</h1>
+                            <p className="text-gray-400 text-lg">Начало вашей легендарной истории с @{otherUser.username}.</p>
                         </div>
-                        <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400 mb-2">{otherUser.username}</h1>
-                        <p className="text-gray-400 text-lg">Начало вашей легендарной истории с @{otherUser.username}.</p>
-                    </div>
-                ) : (
-                    <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 border border-white/5 p-8 rounded-3xl backdrop-blur-sm">
-                        <div className="w-16 h-16 bg-gray-700/50 rounded-2xl flex items-center justify-center mb-4 shadow-inner">
-                            <Hash size={40} className="text-white" />
+                    ) : (
+                        <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 border border-white/5 p-8 rounded-3xl backdrop-blur-sm">
+                            <div className="w-16 h-16 bg-gray-700/50 rounded-2xl flex items-center justify-center mb-4 shadow-inner">
+                                <Hash size={40} className="text-white" />
+                            </div>
+                            <h1 className="text-4xl font-extrabold text-white mb-2 tracking-tight">Welcome to #{channel.name}!</h1>
+                            <p className="text-gray-400 text-lg">Это начало канала. Будьте вежливы и креативны.</p>
                         </div>
-                        <h1 className="text-4xl font-extrabold text-white mb-2 tracking-tight">Welcome to #{channel.name}!</h1>
-                        <p className="text-gray-400 text-lg">Это начало канала. Будьте вежливы и креативны.</p>
+                    )}
+                </div>
+            )}
+
+            {/* Summary Banner */}
+            {summary && (
+                <div className="mx-4 bg-gradient-to-r from-blurple-900/40 to-purple-900/40 border border-blurple-500/30 rounded-2xl p-5 mb-6 animate-fade-in backdrop-blur-md relative group shadow-lg">
+                    <div className="flex items-center gap-2 text-blurple-300 font-bold mb-3 text-xs uppercase tracking-widest">
+                        <Sparkles size={14} />
+                        AI Summary generated
                     </div>
-                )}
-            </div>
-        ) : (
-            <div className="mt-auto flex flex-col justify-end min-h-0 pb-4">
-                {/* Summary Banner */}
-                {summary && (
-                    <div className="mx-4 bg-gradient-to-r from-blurple-900/40 to-purple-900/40 border border-blurple-500/30 rounded-2xl p-5 mb-6 animate-fade-in backdrop-blur-md relative group shadow-lg">
-                        <div className="flex items-center gap-2 text-blurple-300 font-bold mb-3 text-xs uppercase tracking-widest">
-                            <Sparkles size={14} />
-                            AI Summary generated
-                        </div>
-                        <p className="text-gray-100 text-sm leading-relaxed font-medium">{summary}</p>
-                        <button onClick={() => setSummary(null)} className="absolute top-3 right-3 p-1.5 bg-black/20 rounded-full text-gray-400 hover:text-white transition-colors">
-                          <X size={14} />
-                        </button>
-                    </div>
-                )}
+                    <p className="text-gray-100 text-sm leading-relaxed font-medium">{summary}</p>
+                    <button onClick={() => setSummary(null)} className="absolute top-3 right-3 p-1.5 bg-black/20 rounded-full text-gray-400 hover:text-white transition-colors">
+                        <X size={14} />
+                    </button>
+                </div>
+            )}
+
+            {/* Messages List */}
+            {messages.map((msg, idx) => {
+                const user = users[msg.userId] || { username: 'Unknown', avatarUrl: '', id: '?', status: 'offline', isBot: false } as User;
+                const isAdjacent = idx > 0 && messages[idx - 1].userId === msg.userId && (msg.timestamp.getTime() - messages[idx - 1].timestamp.getTime() < 300000);
+                const showHeader = !isAdjacent;
                 
-                {messages.map((msg, idx) => {
-                    const user = users[msg.userId] || { username: 'Unknown', avatarUrl: '', id: '?', status: 'offline', isBot: false } as User;
-                    const isAdjacent = idx > 0 && messages[idx - 1].userId === msg.userId && (msg.timestamp.getTime() - messages[idx - 1].timestamp.getTime() < 300000);
-                    const showHeader = !isAdjacent;
-                    
-                    const isAI = msg.content.startsWith('[AI]:');
-                    const displayContent = isAI ? msg.content.replace('[AI]:', '') : msg.content;
-                    const displayUser = isAI ? users['gemini'] : user;
-                    const isMe = msg.userId === currentUser.id;
+                const isAI = msg.content.startsWith('[AI]:');
+                const displayContent = isAI ? msg.content.replace('[AI]:', '') : msg.content;
+                const displayUser = isAI ? users['gemini'] : user;
+                const isMe = msg.userId === currentUser.id;
 
-                    const replyMsg = msg.replyToId ? messages.find(m => m.id === msg.replyToId) : null;
-                    const replyUser = replyMsg ? users[replyMsg.userId] : null;
+                const replyMsg = msg.replyToId ? messages.find(m => m.id === msg.replyToId) : null;
+                const replyUser = replyMsg ? users[replyMsg.userId] : null;
 
-                    return (
-                        <div 
-                          key={msg.id} 
-                          className={`group relative flex flex-col pr-4 hover:bg-black/10 rounded-lg -mx-2 px-4 ${showHeader ? 'mt-6' : 'mt-0.5'} py-1 transition-colors duration-200`}
-                          onMouseEnter={() => setHoveredMessageId(msg.id)}
-                          onMouseLeave={() => setHoveredMessageId(null)}
-                        >
-                            {/* Reply Reference */}
-                            {replyMsg && showHeader && (
-                              <div className="flex items-center gap-2 mb-1 ml-[50px] text-xs text-gray-400">
-                                <div className="w-8 h-3 border-l-2 border-t-2 border-gray-600 rounded-tl-md ml-[-26px] mt-2 opacity-40"></div>
-                                <div className="flex items-center gap-1 opacity-80 hover:opacity-100 cursor-pointer">
-                                   <img src={replyUser?.avatarUrl || ''} className="w-4 h-4 rounded-full" alt="" />
-                                   <span className="font-semibold text-gray-300">@{replyUser?.username || 'Unknown'}</span>
-                                   <span className="truncate max-w-[300px] italic">{replyMsg.content.replace('[AI]:', '')}</span>
+                return (
+                    <div 
+                        key={msg.id} 
+                        className={`group relative flex flex-col pr-4 hover:bg-black/10 rounded-lg -mx-2 px-4 ${showHeader ? 'mt-6' : 'mt-0.5'} py-1 transition-colors duration-200`}
+                        onMouseEnter={() => setHoveredMessageId(msg.id)}
+                        onMouseLeave={() => setHoveredMessageId(null)}
+                    >
+                        {/* Reply Reference */}
+                        {replyMsg && showHeader && (
+                            <div className="flex items-center gap-2 mb-1 ml-[50px] text-xs text-gray-400">
+                            <div className="w-8 h-3 border-l-2 border-t-2 border-gray-600 rounded-tl-md ml-[-26px] mt-2 opacity-40"></div>
+                            <div className="flex items-center gap-1 opacity-80 hover:opacity-100 cursor-pointer">
+                                <img src={replyUser?.avatarUrl || ''} className="w-4 h-4 rounded-full" alt="" />
+                                <span className="font-semibold text-gray-300">@{replyUser?.username || 'Unknown'}</span>
+                                <span className="truncate max-w-[300px] italic">{replyMsg.content.replace('[AI]:', '')}</span>
+                            </div>
+                            </div>
+                        )}
+
+                        <div className="flex items-start">
+                            {/* Avatar or Time */}
+                            {showHeader ? (
+                                <div className="w-[50px] shrink-0 cursor-pointer mt-0.5">
+                                    <img 
+                                        src={displayUser.avatarUrl} 
+                                        alt={displayUser.username} 
+                                        className="w-10 h-10 rounded-full object-cover shadow-md transition-transform hover:scale-105" 
+                                    />
                                 </div>
-                              </div>
+                            ) : (
+                                <div className="w-[50px] shrink-0 text-[10px] text-gray-500 opacity-0 group-hover:opacity-100 text-left pl-4 pt-1 select-none font-mono">
+                                    {format(msg.timestamp, 'HH:mm')}
+                                </div>
                             )}
 
-                            <div className="flex items-start">
-                              {/* Avatar or Time */}
-                              {showHeader ? (
-                                  <div className="w-[50px] shrink-0 cursor-pointer mt-0.5">
-                                      <img 
-                                          src={displayUser.avatarUrl} 
-                                          alt={displayUser.username} 
-                                          className="w-10 h-10 rounded-full object-cover shadow-md transition-transform hover:scale-105" 
-                                      />
-                                  </div>
-                              ) : (
-                                  <div className="w-[50px] shrink-0 text-[10px] text-gray-500 opacity-0 group-hover:opacity-100 text-left pl-4 pt-1 select-none font-mono">
-                                      {format(msg.timestamp, 'HH:mm')}
-                                  </div>
-                              )}
-
-                              <div className="flex-1 min-w-0">
-                                  {/* Username & Time Header */}
-                                  {showHeader && (
-                                      <div className="flex items-center gap-2">
-                                          <span className={`font-bold hover:underline cursor-pointer tracking-tight ${isAI ? 'text-transparent bg-clip-text bg-gradient-to-r from-blurple-400 to-purple-400' : 'text-white'}`}>
-                                              {displayUser.username}
-                                          </span>
-                                          {displayUser.isBot && <span className="bg-blurple-500 text-white text-[10px] px-1.5 py-0.5 rounded flex items-center h-4 leading-none uppercase font-bold shadow-sm">Bot</span>}
-                                          <span className="text-xs text-gray-500 ml-1 font-medium">
-                                              {format(msg.timestamp, 'dd.MM.yyyy HH:mm', { locale: ru })}
-                                          </span>
-                                      </div>
-                                  )}
-
-                                  {/* Content */}
-                                  <div className={`text-gray-300 whitespace-pre-wrap leading-relaxed ${isAI ? 'text-gray-100' : ''} ${msg.isEdited ? 'text-gray-200' : ''}`}>
-                                      {displayContent}
-                                      {msg.isEdited && <span className="text-[10px] text-gray-500 ml-1 select-none">(изм.)</span>}
-                                  </div>
-                                  
-                                  {/* Attachments */}
-                                  {msg.attachments && msg.attachments.length > 0 && (
-                                      <div className="flex flex-wrap gap-3 mt-3">
-                                          {msg.attachments.map((att, i) => (
-                                              <div key={i} className="rounded-xl overflow-hidden border border-white/10 bg-black/20 max-w-xs shadow-lg transition-transform hover:scale-[1.02]">
-                                                  {att.type === 'image' ? (
-                                                      <img src={att.url} alt={att.name} className="max-h-64 object-contain cursor-pointer" />
-                                                  ) : (
-                                                      <div className="flex items-center gap-3 p-4">
-                                                          <div className="p-2 bg-blurple-500/20 rounded-lg">
-                                                            <FileIcon size={24} className="text-blurple-400" />
-                                                          </div>
-                                                          <div className="text-sm truncate max-w-[150px]">
-                                                              <div className="text-white font-medium truncate">{att.name}</div>
-                                                              <div className="text-gray-500 text-xs">File</div>
-                                                          </div>
-                                                      </div>
-                                                  )}
-                                              </div>
-                                          ))}
-                                      </div>
-                                  )}
-
-                                  {/* Reactions */}
-                                  {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                                    <div className="flex flex-wrap gap-1.5 mt-2">
-                                      {Object.entries(msg.reactions).map(([emoji, userIds]) => (
-                                        <button 
-                                          key={emoji}
-                                          onClick={() => onAddReaction(msg.id, emoji)}
-                                          className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-sm transition-all shadow-sm
-                                            ${userIds.includes(currentUser.id) 
-                                              ? 'bg-blurple-500/20 border-blurple-500/50 text-blurple-300' 
-                                              : 'bg-gray-800/50 border-transparent hover:border-gray-600 text-gray-300 hover:bg-gray-700'}`}
-                                        >
-                                          <span>{emoji}</span>
-                                          <span className="font-bold text-xs">{userIds.length}</span>
-                                        </button>
-                                      ))}
+                            <div className="flex-1 min-w-0">
+                                {/* Username & Time Header */}
+                                {showHeader && (
+                                    <div className="flex items-center gap-2">
+                                        <span className={`font-bold hover:underline cursor-pointer tracking-tight ${isAI ? 'text-transparent bg-clip-text bg-gradient-to-r from-blurple-400 to-purple-400' : 'text-white'}`}>
+                                            {displayUser.username}
+                                        </span>
+                                        {displayUser.isBot && <span className="bg-blurple-500 text-white text-[10px] px-1.5 py-0.5 rounded flex items-center h-4 leading-none uppercase font-bold shadow-sm">Bot</span>}
+                                        <span className="text-xs text-gray-500 ml-1 font-medium">
+                                            {format(msg.timestamp, 'dd.MM.yyyy HH:mm', { locale: ru })}
+                                        </span>
                                     </div>
-                                  )}
-                              </div>
-                            </div>
+                                )}
 
-                            {/* Hover Actions Toolbar */}
-                            <div className={`absolute right-4 -top-4 bg-gray-900 border border-gray-700 rounded-lg shadow-xl flex items-center p-1 transition-all duration-200 scale-95 ${hoveredMessageId === msg.id ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 pointer-events-none translate-y-2'}`}>
-                               <button onClick={() => onAddReaction(msg.id, '👍')} className="p-2 text-gray-400 hover:text-yellow-400 hover:bg-gray-800 rounded-md transition-colors"><Smile size={18} /></button>
-                               <button onClick={() => handleStartReply(msg)} className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors"><Reply size={18} /></button>
-                               {isMe && (
-                                 <button onClick={() => handleStartEdit(msg)} className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors"><Pencil size={18} /></button>
-                               )}
-                               <button onClick={() => handleExplain(msg)} className="p-2 text-gray-400 hover:text-blurple-400 hover:bg-gray-800 rounded-md transition-colors" title="Ask AI to explain"><Sparkles size={18} /></button>
-                               {isMe && (
-                                 <button onClick={() => onDeleteMessage(msg.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-gray-800 rounded-md transition-colors"><Trash2 size={18} /></button>
-                               )}
+                                {/* Content */}
+                                <div className={`text-gray-300 whitespace-pre-wrap leading-relaxed ${isAI ? 'text-gray-100' : ''} ${msg.isEdited ? 'text-gray-200' : ''}`}>
+                                    {displayContent}
+                                    {msg.isEdited && <span className="text-[10px] text-gray-500 ml-1 select-none">(изм.)</span>}
+                                </div>
+                                
+                                {/* Attachments */}
+                                {msg.attachments && msg.attachments.length > 0 && (
+                                    <div className="flex flex-wrap gap-3 mt-3">
+                                        {msg.attachments.map((att, i) => (
+                                            <div key={i} className="rounded-xl overflow-hidden border border-white/10 bg-black/20 max-w-xs shadow-lg transition-transform hover:scale-[1.02]">
+                                                {att.type === 'image' ? (
+                                                    <img src={att.url} alt={att.name} className="max-h-64 object-contain cursor-pointer" />
+                                                ) : (
+                                                    <div className="flex items-center gap-3 p-4">
+                                                        <div className="p-2 bg-blurple-500/20 rounded-lg">
+                                                        <FileIcon size={24} className="text-blurple-400" />
+                                                        </div>
+                                                        <div className="text-sm truncate max-w-[150px]">
+                                                            <div className="text-white font-medium truncate">{att.name}</div>
+                                                            <div className="text-gray-500 text-xs">File</div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Reactions */}
+                                {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                    {Object.entries(msg.reactions).map(([emoji, userIds]) => (
+                                    <button 
+                                        key={emoji}
+                                        onClick={() => onAddReaction(msg.id, emoji)}
+                                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-sm transition-all shadow-sm
+                                        ${userIds.includes(currentUser.id) 
+                                            ? 'bg-blurple-500/20 border-blurple-500/50 text-blurple-300' 
+                                            : 'bg-gray-800/50 border-transparent hover:border-gray-600 text-gray-300 hover:bg-gray-700'}`}
+                                    >
+                                        <span>{emoji}</span>
+                                        <span className="font-bold text-xs">{userIds.length}</span>
+                                    </button>
+                                    ))}
+                                </div>
+                                )}
                             </div>
                         </div>
-                    );
-                })}
-            </div>
-        )}
-        
-        {/* Loading / Typing Indicators */}
-        {(isTyping || loadingSummary) && (
-           <div className="flex items-center gap-2 px-6 pb-2 text-gray-400 text-xs font-bold uppercase tracking-wider animate-pulse">
-              <Bot size={14} className="text-blurple-400" />
-              <span>{loadingSummary ? 'Gemini анализирует контекст...' : 'Gemini печатает...'}</span>
-           </div>
-        )}
-        <div ref={bottomRef} />
+
+                        {/* Hover Actions Toolbar */}
+                        <div className={`absolute right-4 -top-4 bg-gray-900 border border-gray-700 rounded-lg shadow-xl flex items-center p-1 transition-all duration-200 scale-95 ${hoveredMessageId === msg.id ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 pointer-events-none translate-y-2'}`}>
+                            <button onClick={() => onAddReaction(msg.id, '👍')} className="p-2 text-gray-400 hover:text-yellow-400 hover:bg-gray-800 rounded-md transition-colors"><Smile size={18} /></button>
+                            <button onClick={() => handleStartReply(msg)} className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors"><Reply size={18} /></button>
+                            {isMe && (
+                                <button onClick={() => handleStartEdit(msg)} className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors"><Pencil size={18} /></button>
+                            )}
+                            <button onClick={() => handleExplain(msg)} className="p-2 text-gray-400 hover:text-blurple-400 hover:bg-gray-800 rounded-md transition-colors" title="Ask AI to explain"><Sparkles size={18} /></button>
+                            {isMe && (
+                                <button onClick={() => onDeleteMessage(msg.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-gray-800 rounded-md transition-colors"><Trash2 size={18} /></button>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
+            
+            {/* Typing / Loading Indicator */}
+            {(isTyping || loadingSummary) && (
+                <div className="flex items-center gap-2 px-6 pt-2 pb-1 text-gray-400 text-xs font-bold uppercase tracking-wider animate-pulse">
+                    <Bot size={14} className="text-blurple-400" />
+                    <span>{loadingSummary ? 'Gemini анализирует контекст...' : 'Gemini печатает...'}</span>
+                </div>
+            )}
+            
+            {/* Scroll Anchor */}
+            <div ref={bottomRef} className="h-px" />
+        </div>
       </div>
 
       {/* Input Area */}
