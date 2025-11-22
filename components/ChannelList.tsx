@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Server, Channel, ChannelType, User } from '../types';
-import { Hash, Volume2, Settings, Mic, Headphones, ChevronDown, Plus, Sparkles, Search, X, UserPlus, PhoneOff, Video, Monitor, MicOff, VideoOff, Signal } from 'lucide-react';
+import { Hash, Volume2, Settings, Mic, Headphones, ChevronDown, Plus, Sparkles, Search, X, UserPlus, PhoneOff, Video, Monitor, MicOff, VideoOff, Signal, Link } from 'lucide-react';
 
 interface ChannelListProps {
   activeServerId: string;
@@ -28,6 +28,7 @@ interface ChannelListProps {
   onChangeStatus: (status: 'online' | 'idle' | 'dnd' | 'offline') => void;
   onCreateDM: (userId: string) => void;
   onOpenSettings: () => void;
+  onOpenConnectionManager: () => void;
 }
 
 const ChannelList: React.FC<ChannelListProps> = ({ 
@@ -47,7 +48,8 @@ const ChannelList: React.FC<ChannelListProps> = ({
   onToggleScreenShare,
   onChangeStatus,
   onCreateDM,
-  onOpenSettings
+  onOpenSettings,
+  onOpenConnectionManager
 }) => {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [dmSearchQuery, setDmSearchQuery] = useState('');
@@ -71,13 +73,20 @@ const ChannelList: React.FC<ChannelListProps> = ({
 
     return (
        <div className="w-64 bg-gray-900/60 backdrop-blur-md flex flex-col h-full shrink-0 border-r border-white/5">
-          <div className="h-12 px-3 flex items-center justify-center shadow-sm z-10 mt-2">
+          <div className="h-12 px-3 flex items-center justify-center shadow-sm z-10 mt-2 gap-2">
              <button 
                 onClick={() => setIsSearching(true)}
-                className="w-full bg-black/40 text-left text-gray-400 text-xs px-3 py-2 rounded-lg flex items-center gap-2 hover:bg-black/60 transition-all border border-white/5 hover:border-white/10"
+                className="flex-1 bg-black/40 text-left text-gray-400 text-xs px-3 py-2 rounded-lg flex items-center gap-2 hover:bg-black/60 transition-all border border-white/5 hover:border-white/10"
              >
                 <Search size={14} />
-                Найти беседу...
+                Найти...
+             </button>
+             <button 
+                onClick={onOpenConnectionManager}
+                className="bg-blurple-500/20 hover:bg-blurple-500 text-blurple-400 hover:text-white p-2 rounded-lg transition-all border border-blurple-500/30"
+                title="P2P Connect"
+             >
+                <Link size={14} />
              </button>
           </div>
 
@@ -162,6 +171,7 @@ const ChannelList: React.FC<ChannelListProps> = ({
             onDisconnect={onDisconnect}
             onToggleCamera={onToggleCamera}
             onToggleScreenShare={onToggleScreenShare}
+            onOpenOverlay={() => voiceState.channelId && onSelectChannel(voiceState.channelId, ChannelType.VOICE)}
           />
 
           <UserControlPanel 
@@ -276,6 +286,7 @@ const ChannelList: React.FC<ChannelListProps> = ({
         onDisconnect={onDisconnect}
         onToggleCamera={onToggleCamera}
         onToggleScreenShare={onToggleScreenShare}
+        onOpenOverlay={() => voiceState.channelId && onSelectChannel(voiceState.channelId, ChannelType.VOICE)}
       />
 
       <UserControlPanel 
@@ -293,13 +304,16 @@ const ChannelList: React.FC<ChannelListProps> = ({
   );
 };
 
-const VoiceStatusPanel = ({ voiceState, channelName, onToggleMute, onDisconnect, onToggleCamera, onToggleScreenShare }: any) => {
+const VoiceStatusPanel = ({ voiceState, channelName, onToggleMute, onDisconnect, onToggleCamera, onToggleScreenShare, onOpenOverlay }: any) => {
   if (!voiceState.connected) return null;
 
   return (
     <div className="bg-gray-950/80 backdrop-blur-md border-t border-white/5 p-2">
-      <div className="bg-green-500/5 border border-green-500/20 rounded-xl p-2">
-        <div className="flex items-center justify-between mb-2 px-1">
+      <div 
+        onClick={onOpenOverlay}
+        className="bg-green-500/5 border border-green-500/20 rounded-xl p-2 cursor-pointer hover:bg-green-500/10 transition-colors"
+      >
+        <div className="flex items-center justify-between mb-2 px-1 pointer-events-none">
            <div className="flex items-center gap-2 overflow-hidden">
               <Signal size={14} className="text-green-500 shrink-0" />
               <div className="flex flex-col min-w-0">
@@ -309,7 +323,7 @@ const VoiceStatusPanel = ({ voiceState, channelName, onToggleMute, onDisconnect,
            </div>
         </div>
         
-        <div className="flex items-center justify-between gap-1">
+        <div className="flex items-center justify-between gap-1" onClick={(e) => e.stopPropagation()}>
             <button onClick={onToggleMute} className={`flex-1 p-1.5 rounded-lg flex justify-center transition-colors ${voiceState.muted ? 'bg-white text-black' : 'bg-black/40 text-white hover:bg-gray-700'}`}>
                 {voiceState.muted ? <MicOff size={16} /> : <Mic size={16} />}
             </button>

@@ -46,6 +46,12 @@ export interface Server {
   channels: Channel[];
 }
 
+export enum ConnectionState {
+  DISCONNECTED = 'disconnected',
+  CONNECTING = 'connecting',
+  CONNECTED = 'connected'
+}
+
 export interface AppState {
   currentUser: User;
   servers: Server[];
@@ -64,5 +70,11 @@ export interface AppState {
     screenShareOn: boolean;
     localCameraStream?: MediaStream; // Microphone + Camera
     localScreenStream?: MediaStream; // Screen Share + System Audio
+    remoteStreams: Record<string, MediaStream>; // Multiple incoming P2P Streams
   };
+  p2p: {
+      myPeerId: string | null;
+      remotePeerId: string | null;
+      connectionState: ConnectionState;
+  }
 }

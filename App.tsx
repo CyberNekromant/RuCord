@@ -6,10 +6,12 @@ import ChatArea from './components/ChatArea';
 import UserList from './components/UserList';
 import AuthScreen from './components/AuthScreen';
 import SettingsModal from './components/SettingsModal';
+import ConnectionManager from './components/ConnectionManager';
 import { INITIAL_SERVERS, INITIAL_MESSAGES, MOCK_USERS, CURRENT_USER, GEMINI_BOT, INITIAL_DMS } from './constants';
-import { ChannelType, Message, User, Channel } from './types';
+import { ChannelType, Message, User, Channel, ConnectionState } from './types';
 import { Mic, Video, Monitor, PhoneOff, MicOff, VideoOff, ScreenShare, LayoutGrid, Maximize2, Wifi, Signal } from 'lucide-react';
 import { soundService } from './services/soundService';
+import { Peer, DataConnection, MediaConnection } from 'peerjs';
 
 const App: React.FC = () => {
   // --- Auth State ---
@@ -22,6 +24,17 @@ const App: React.FC = () => {
   const [selectedCamId, setSelectedCamId] = useState('');
   const [selectedSpeakerId, setSelectedSpeakerId] = useState('');
   const [volume, setVolume] = useState(1.0);
+
+  // --- P2P State ---
+  const [isConnectionManagerOpen, setIsConnectionManagerOpen] = useState(false);
+  const [myPeerId, setMyPeerId] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionState>(ConnectionState.DISCONNECTED);
+  
+  // Multi-peer references
+  const peerRef = useRef<Peer | null>(null);
+  const connectionsRef = useRef<Map<string, DataConnection>>(new Map());
+  const callsRef = useRef<Map<string, MediaConnection>>(new Map());
+  const [connectedPeers, setConnectedPeers] = useState<string[]>([]);
 
   // --- Persistence Helpers ---
   const loadMessagesFromStorage = (): Record<string, Message[]> => {
@@ -69,12 +82,13 @@ const App: React.FC = () => {
     screenShareOn: false,
     localCameraStream: undefined as MediaStream | undefined,
     localScreenStream: undefined as MediaStream | undefined,
+    remoteStreams: {} as Record<string, MediaStream>, // Map peerId -> Stream
   });
   
   // Refs for media
   const cameraVideoRef = useRef<HTMLVideoElement>(null);
   const screenVideoRef = useRef<HTMLVideoElement>(null);
-
+  
   // --- Sound Service Init ---
   useEffect(() => {
     const handleInteraction = () => {
@@ -94,6 +108,150 @@ const App: React.FC = () => {
   useEffect(() => {
     soundService.setVolume(volume);
   }, [volume]);
+
+  // --- P2P Logic Initialization ---
+  useEffect(() => {
+    if (isAuthenticated && !peerRef.current) {
+       const peer = new Peer();
+       
+       peer.on('open', (id) => {
+           console.log('My Peer ID:', id);
+           setMyPeerId(id);
+       });
+
+       peer.on('connection', (conn) => {
+           console.log('Incoming connection from:', conn.peer);
+           handleIncomingConnection(conn);
+       });
+
+       peer.on('call', (call) => {
+           console.log('Incoming call from:', call.peer);
+           handleIncomingCall(call);
+       });
+
+       peerRef.current = peer;
+    }
+  }, [isAuthenticated]);
+
+  const handleConnectPeer = (peerId: string) => {
+      if (!peerRef.current) return;
+      if (connectionsRef.current.has(peerId)) return; // Already connected
+
+      setConnectionStatus(ConnectionState.CONNECTING);
+      const conn = peerRef.current.connect(peerId);
+      handleIncomingConnection(conn);
+  };
+
+  const handleIncomingConnection = (conn: DataConnection) => {
+      conn.on('open', () => {
+          connectionsRef.current.set(conn.peer, conn);
+          setConnectedPeers(prev => [...prev, conn.peer]);
+          setConnectionStatus(ConnectionState.CONNECTED);
+          
+          // Send handshake
+          conn.send({ type: 'handshake', user: currentUser });
+
+          // If we are already in a call, try to call this new peer immediately?
+          if (voiceState.connected && voiceState.localCameraStream) {
+             callPeer(conn.peer, voiceState.localCameraStream);
+          }
+      });
+
+      conn.on('data', (data: any) => {
+          if (data.type === 'message') {
+              receiveP2PMessage(data.message);
+          } else if (data.type === 'handshake') {
+              console.log('Handshake received:', data.user);
+          }
+      });
+
+      conn.on('close', () => {
+          connectionsRef.current.delete(conn.peer);
+          setConnectedPeers(prev => prev.filter(p => p !== conn.peer));
+          
+          // Remove stream if exists
+          setVoiceState(prev => {
+              const newStreams = { ...prev.remoteStreams };
+              delete newStreams[conn.peer];
+              return { ...prev, remoteStreams: newStreams };
+          });
+
+          if (connectionsRef.current.size === 0) {
+              setConnectionStatus(ConnectionState.DISCONNECTED);
+          }
+      });
+      
+      conn.on('error', (err) => {
+          console.error('Connection Error:', err);
+          connectionsRef.current.delete(conn.peer);
+          setConnectedPeers(prev => prev.filter(p => p !== conn.peer));
+      });
+  };
+
+  const broadcastMessage = (msg: Message) => {
+      connectionsRef.current.forEach(conn => {
+          if (conn.open) {
+              conn.send({ type: 'message', message: msg });
+          }
+      });
+  };
+
+  const handleIncomingCall = (call: MediaConnection) => {
+      callsRef.current.set(call.peer, call);
+      
+      // Answer automatically with local stream if available
+      const streamToAnswer = voiceState.localCameraStream || undefined;
+      
+      call.answer(streamToAnswer);
+      
+      // If we didn't have a stream, we just answered to receive theirs.
+      // But if we answered with a stream, we should update state connected.
+      if (!voiceState.connected) {
+          setVoiceState(prev => ({
+             ...prev,
+             connected: true,
+             channelId: activeChannelId, // Assume P2P call is in current channel
+          }));
+      }
+
+      call.on('stream', (remoteStream) => {
+          setVoiceState(prev => ({
+              ...prev,
+              remoteStreams: { ...prev.remoteStreams, [call.peer]: remoteStream }
+          }));
+      });
+      
+      call.on('close', () => {
+           setVoiceState(prev => {
+              const newStreams = { ...prev.remoteStreams };
+              delete newStreams[call.peer];
+              return { ...prev, remoteStreams: newStreams };
+          });
+          callsRef.current.delete(call.peer);
+      });
+  };
+  
+  const callPeer = (peerId: string, stream: MediaStream) => {
+      if (!peerRef.current) return;
+      const call = peerRef.current.call(peerId, stream);
+      callsRef.current.set(peerId, call);
+      
+      call.on('stream', (remoteStream) => {
+          setVoiceState(prev => ({
+              ...prev,
+              remoteStreams: { ...prev.remoteStreams, [peerId]: remoteStream }
+          }));
+      });
+  };
+
+  const receiveP2PMessage = (msg: Message) => {
+      soundService.play('message');
+      setMessages(prev => ({
+          ...prev,
+          [msg.channelId]: [...(prev[msg.channelId] || []), msg]
+      }));
+  };
+
 
   // --- Auth Logic ---
   useEffect(() => {
@@ -215,8 +373,6 @@ const App: React.FC = () => {
   const currentMessages = messages[activeChannel?.id] || [];
 
   const allUsers = useMemo(() => {
-     // Combine Mock users with our authenticated user if needed, though for this demo we just inject currentUser
-     // Also maybe pull other registered users from localStorage for "realism"
      const storedUsers = JSON.parse(localStorage.getItem('rucord_users') || '[]');
      const otherStoredUsers = storedUsers.filter((u: User) => u.id !== currentUser.id);
 
@@ -251,11 +407,12 @@ const App: React.FC = () => {
     if (type === ChannelType.TEXT || type === ChannelType.DM) {
       setActiveChannelId(id);
     } else {
-      // Handle Voice logic
-      if (voiceState.connected && voiceState.channelId === id) {
-        return; 
+      // Voice Channel Logic
+      setActiveChannelId(id);
+      
+      if (!voiceState.connected || voiceState.channelId !== id) {
+        handleStartCall(false, id);
       }
-      handleStartCall(false, id);
     }
   };
 
@@ -279,7 +436,7 @@ const App: React.FC = () => {
   };
 
   const handleSendMessage = (text: string, replyToId?: string, attachments?: { type: 'image' | 'file', url: string, name: string }[]) => {
-    soundService.play('message'); // Play sound on send/receive
+    soundService.play('message'); 
     
     const isAI = text.startsWith('[AI]:');
     const content = isAI ? text : text;
@@ -299,6 +456,9 @@ const App: React.FC = () => {
       ...prev,
       [activeChannel.id]: [...(prev[activeChannel.id] || []), newMessage]
     }));
+
+    // Broadcast P2P to ALL connected peers
+    broadcastMessage(newMessage);
   };
 
   const handleEditMessage = (messageId: string, newText: string) => {
@@ -345,59 +505,49 @@ const App: React.FC = () => {
   };
 
   // --- Media Handling ---
-
-  // Helper to stop tracks in a specific stream
   const stopStreamTracks = (stream?: MediaStream) => {
       if (stream) {
           stream.getTracks().forEach(track => track.stop());
       }
   };
 
-  // Cleanup on unmount
   useEffect(() => {
       return () => {
           stopStreamTracks(voiceState.localCameraStream);
           stopStreamTracks(voiceState.localScreenStream);
+          Object.values(voiceState.remoteStreams).forEach(s => stopStreamTracks(s));
       };
   }, []);
 
-  // Update video elements when streams change
+  // Update video elements
   useEffect(() => {
       if (cameraVideoRef.current) {
           cameraVideoRef.current.srcObject = voiceState.localCameraStream || null;
-          if (cameraVideoRef.current && typeof (cameraVideoRef.current as any).setSinkId === 'function' && selectedSpeakerId) {
-            (cameraVideoRef.current as any).setSinkId(selectedSpeakerId).catch((e: any) => console.warn("Sink ID error", e));
-          }
-          cameraVideoRef.current.volume = volume;
+          cameraVideoRef.current.volume = 0;
       }
-  }, [voiceState.localCameraStream, selectedSpeakerId, volume]);
+  }, [voiceState.localCameraStream]);
 
   useEffect(() => {
       if (screenVideoRef.current) {
           screenVideoRef.current.srcObject = voiceState.localScreenStream || null;
-          if (screenVideoRef.current && typeof (screenVideoRef.current as any).setSinkId === 'function' && selectedSpeakerId) {
-             (screenVideoRef.current as any).setSinkId(selectedSpeakerId).catch((e: any) => console.warn("Sink ID error", e));
-          }
-          screenVideoRef.current.volume = volume;
+          screenVideoRef.current.volume = 0;
       }
-  }, [voiceState.localScreenStream, selectedSpeakerId, volume]);
+  }, [voiceState.localScreenStream]);
 
 
   const handleStartCall = async (withVideo: boolean, targetChannelId?: string) => {
       const channelToJoin = targetChannelId || activeChannel.id;
       
-      // If already connected, just return (or we could handle switching channels gracefully)
+      // If already connected, switch camera state
       if (voiceState.connected && voiceState.channelId === channelToJoin) {
           if (withVideo && !voiceState.cameraOn) toggleCamera();
           return;
       }
 
-      // Clean up previous if any
       stopStreamTracks(voiceState.localCameraStream);
       stopStreamTracks(voiceState.localScreenStream);
 
       try {
-          // Always get audio (Mic) with selected device if possible
           const constraints: MediaStreamConstraints = {
              audio: selectedMicId ? { deviceId: { exact: selectedMicId } } : true,
              video: withVideo ? (selectedCamId ? { deviceId: { exact: selectedCamId } } : true) : false
@@ -411,25 +561,23 @@ const App: React.FC = () => {
               channelId: channelToJoin, 
               cameraOn: withVideo,
               localCameraStream: stream,
-              // Reset screen share on new call
               screenShareOn: false,
               localScreenStream: undefined
           }));
+
+          // Call ALL connected peers
+          connectionsRef.current.forEach((conn, peerId) => {
+               callPeer(peerId, stream);
+          });
+
       } catch (e) {
           console.error("Failed to get media", e);
-          // Try audio only fallback
-          if (withVideo) {
-              handleStartCall(false, channelToJoin);
-          }
+          if (withVideo) handleStartCall(false, channelToJoin);
       }
   };
 
   const toggleCamera = async () => {
-      // This function toggles VIDEO track on the localCameraStream
-      // It ensures we always have Audio (Mic)
-      
       if (voiceState.cameraOn) {
-          // Turn Camera OFF, Keep Mic
           stopStreamTracks(voiceState.localCameraStream);
            try {
             const constraints: MediaStreamConstraints = {
@@ -440,47 +588,40 @@ const App: React.FC = () => {
             setVoiceState(prev => ({ ...prev, cameraOn: false, localCameraStream: stream }));
           } catch (e) { console.error(e); }
       } else {
-          // Turn Camera ON, Keep Mic
            try {
             const constraints: MediaStreamConstraints = {
                 audio: selectedMicId ? { deviceId: { exact: selectedMicId } } : true,
                 video: selectedCamId ? { deviceId: { exact: selectedCamId } } : true
             };
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            // Stop old audio-only stream
             stopStreamTracks(voiceState.localCameraStream);
-            
             setVoiceState(prev => ({ ...prev, cameraOn: true, localCameraStream: stream }));
+            
+            // In a real app, we need to replaceTracks in active peer calls here
+            // callRef.current.peerConnection.getSenders()...
           } catch (e) { console.error(e); }
       }
   };
 
   const toggleScreenShare = async () => {
       if (voiceState.screenShareOn) {
-          // Turn OFF
           stopStreamTracks(voiceState.localScreenStream);
           setVoiceState(prev => ({ ...prev, screenShareOn: false, localScreenStream: undefined }));
       } else {
-          // Turn ON
           try {
-              // Request Screen Share + System Audio
               const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-              
-              // Handle "Stop Sharing" system button
               displayStream.getVideoTracks()[0].onended = () => {
                    setVoiceState(prev => ({ ...prev, screenShareOn: false, localScreenStream: undefined }));
               };
-
               setVoiceState(prev => ({ 
                   ...prev, 
                   screenShareOn: true, 
                   localScreenStream: displayStream 
               }));
+              
+              // Note: Need to add screen stream to peer connection in real implementation
           } catch (e) {
-              console.error("Screen share cancelled or failed", e);
-              if (e instanceof DOMException && e.name === 'NotAllowedError') {
-                  alert("Для демонстрации экрана необходимо разрешение.");
-              }
+              console.error("Screen share cancelled", e);
           }
       }
   };
@@ -488,6 +629,11 @@ const App: React.FC = () => {
    const handleDisconnectVoice = () => {
       stopStreamTracks(voiceState.localCameraStream);
       stopStreamTracks(voiceState.localScreenStream);
+      
+      // Close all calls
+      callsRef.current.forEach(call => call.close());
+      callsRef.current.clear();
+      
       setVoiceState(prev => ({ 
           ...prev, 
           connected: false, 
@@ -495,7 +641,8 @@ const App: React.FC = () => {
           cameraOn: false, 
           screenShareOn: false, 
           localCameraStream: undefined,
-          localScreenStream: undefined
+          localScreenStream: undefined,
+          remoteStreams: {}
       }));
   };
   
@@ -505,50 +652,33 @@ const App: React.FC = () => {
      if (type === 'speaker') setSelectedSpeakerId(deviceId);
   };
 
-  // --- Render Auth Screen if not logged in ---
   if (!isAuthenticated) {
       return <AuthScreen onLogin={handleLogin} onRegister={handleRegister} />;
   }
 
-  // --- UI Grid Logic ---
-  // Determine what to show in the video grid
-  const showCallOverlay = voiceState.connected && voiceState.channelId === activeChannel.id && (voiceState.cameraOn || voiceState.screenShareOn);
+  const showCallOverlay = voiceState.connected && voiceState.channelId === activeChannel.id;
   
-  // Find the name of the connected voice channel (if any)
   let connectedChannelName = '';
   if (voiceState.connected && voiceState.channelId) {
-      // Search in active server first
       const inCurrentServer = activeServer?.channels.find(c => c.id === voiceState.channelId);
-      if (inCurrentServer) {
-          connectedChannelName = inCurrentServer.name;
-      } else {
-          // Search all servers
+      if (inCurrentServer) connectedChannelName = inCurrentServer.name;
+      else {
           for (const s of INITIAL_SERVERS) {
               const ch = s.channels.find(c => c.id === voiceState.channelId);
-              if (ch) {
-                  connectedChannelName = `${ch.name} / ${s.name}`;
-                  break;
-              }
+              if (ch) { connectedChannelName = `${ch.name} / ${s.name}`; break; }
           }
       }
   }
 
   return (
     <div className="flex w-full h-screen font-sans text-gray-100 selection:bg-blurple-500 selection:text-white relative z-0" onClick={() => soundService.resumeContext()}>
-      
-      {/* Subtle glass backdrop for the whole app */}
       <div className="absolute inset-0 z-0 pointer-events-none bg-black/10" />
 
       <nav className="shrink-0 h-full relative z-20">
-        <ServerList 
-          servers={INITIAL_SERVERS} 
-          activeServerId={activeServerId} 
-          onSelectServer={handleServerSelect} 
-        />
+        <ServerList servers={INITIAL_SERVERS} activeServerId={activeServerId} onSelectServer={handleServerSelect} />
       </nav>
 
       <div className="flex flex-1 min-w-0 bg-gray-900/40 backdrop-blur-md rounded-tl-[32px] overflow-hidden shadow-2xl my-2 mr-2 border border-white/5 relative z-10">
-        
         <ChannelList 
           activeServerId={activeServerId}
           server={activeServer} 
@@ -567,26 +697,20 @@ const App: React.FC = () => {
           onChangeStatus={(s) => setCurrentUser(p => ({...p, status: s}))}
           onCreateDM={handleCreateDM}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenConnectionManager={() => setIsConnectionManagerOpen(true)}
         />
 
-        {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0 relative bg-white/5 min-h-0 overflow-hidden">
-          {/* CALL OVERLAY */}
           {showCallOverlay ? (
               <div className="flex-1 bg-black relative flex flex-col p-0 overflow-hidden">
-                  {/* Top Info Bar */}
                   <div className="absolute top-4 left-4 z-20 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
                      <Signal size={14} className="text-green-500" />
                      <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">Connected: {activeChannel.name}</span>
                   </div>
-                  <button 
-                     onClick={() => toggleCamera()} 
-                     className="absolute top-4 right-4 z-20 bg-black/60 text-white px-3 py-1.5 rounded-full border border-white/10 hover:bg-gray-800 transition-colors text-xs font-medium"
-                  >
+                  <button onClick={() => toggleCamera()} className="absolute top-4 right-4 z-20 bg-black/60 text-white px-3 py-1.5 rounded-full border border-white/10 hover:bg-gray-800 transition-colors text-xs font-medium">
                       <MinimizeUI />
                   </button>
 
-                  {/* Responsive Video Grid */}
                   <div className="flex-1 p-4 overflow-y-auto custom-scrollbar flex items-center justify-center">
                       <div className={`grid gap-4 w-full max-w-7xl transition-all duration-300
                           ${voiceState.screenShareOn 
@@ -595,24 +719,17 @@ const App: React.FC = () => {
                           }
                       `}>
                           
-                          {/* 1. Screen Share Stage (Takes Priority if On) */}
                           {voiceState.screenShareOn && (
                               <div className="relative bg-gray-900 rounded-2xl overflow-hidden border border-blurple-500/50 shadow-2xl group col-span-1 lg:row-span-2 h-full">
                                    <video ref={screenVideoRef} autoPlay muted className="w-full h-full object-contain bg-black" />
-                                   
                                    <div className="absolute top-4 left-4 bg-blurple-600 px-3 py-1.5 rounded-lg text-white text-xs font-bold flex items-center gap-2 shadow-lg border border-white/10 z-10">
                                        <ScreenShare size={14} />
                                        LIVE SCREEN
                                    </div>
-                                   
-                                   {/* Hover Controls */}
-                                   <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <div className="text-white font-bold text-lg">{currentUser.username}'s Screen</div>
-                                   </div>
                               </div>
                           )}
 
-                          {/* 2. Local Camera User */}
+                          {/* Local User */}
                           <div className={`relative bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-lg flex flex-col group
                                ${voiceState.screenShareOn ? 'h-[250px]' : 'min-h-[250px]'}
                           `}>
@@ -624,93 +741,45 @@ const App: React.FC = () => {
                                         <img src={currentUser.avatarUrl} className="w-24 h-24 rounded-full border-4 border-gray-700 shadow-xl z-10" />
                                    </div>
                                )}
-                               
-                               {/* Name Tag */}
                                <div className="absolute bottom-4 left-4 bg-black/60 px-3 py-1.5 rounded-lg text-white text-sm font-bold backdrop-blur-md flex items-center gap-2 border border-white/10 z-10">
-                                   <div className="relative">
-                                      <img src={currentUser.avatarUrl} className="w-5 h-5 rounded-full" />
-                                      {voiceState.muted && (
-                                        <div className="absolute -bottom-1 -right-1 bg-red-500 rounded-full p-0.5 border border-black">
-                                          <MicOff size={8} />
-                                        </div>
-                                      )}
-                                   </div>
                                    {currentUser.username} (You)
                                </div>
-                               
-                               {/* Connection Quality */}
-                               <div className="absolute top-4 right-4 bg-black/40 p-1.5 rounded-md backdrop-blur-sm">
-                                   <Wifi size={14} className="text-green-500" />
-                               </div>
-                               
-                               {/* Active Speaker Ring */}
                                <div className={`absolute inset-0 border-4 ${voiceState.muted ? 'border-transparent' : 'border-green-500/50'} rounded-2xl pointer-events-none transition-colors duration-300`} />
                           </div>
 
-                          {/* 3. Mock Participant 1 */}
-                          <div className={`relative bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-lg flex flex-col group
-                               ${voiceState.screenShareOn ? 'h-[250px]' : 'min-h-[250px]'}
-                          `}>
-                               <div className="w-full h-full flex items-center justify-center bg-gray-800 relative">
-                                    <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/20 to-purple-900/20" />
-                                    <img src="https://picsum.photos/id/1011/200/200" className="w-24 h-24 rounded-full border-4 border-gray-700 shadow-xl z-10" />
-                                    <div className="absolute w-28 h-28 rounded-full border-2 border-green-500/30 animate-ping z-0" />
-                               </div>
-                               <div className="absolute bottom-4 left-4 bg-black/60 px-3 py-1.5 rounded-lg text-white text-sm font-bold backdrop-blur-md flex items-center gap-2 border border-white/10 z-10">
-                                   Sarah
-                               </div>
-                               <div className="absolute inset-0 border-4 border-green-500/50 rounded-2xl pointer-events-none" />
-                          </div>
+                          {/* Remote Users List */}
+                          {Object.entries(voiceState.remoteStreams).map(([peerId, stream]) => (
+                               <RemoteVideoCard key={peerId} stream={stream} peerId={peerId} volume={volume} />
+                          ))}
 
-                          {/* 4. Mock Participant 2 */}
-                          <div className={`relative bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-lg flex flex-col group
-                               ${voiceState.screenShareOn ? 'h-[250px]' : 'min-h-[250px]'}
-                          `}>
-                               <div className="w-full h-full flex items-center justify-center bg-gray-800 relative">
-                                    <img src="https://picsum.photos/id/1025/200/200" className="w-24 h-24 rounded-full border-4 border-gray-700 shadow-xl opacity-60 grayscale" />
-                               </div>
-                               <div className="absolute bottom-4 left-4 bg-black/60 px-3 py-1.5 rounded-lg text-white text-sm font-bold backdrop-blur-md flex items-center gap-2 border border-white/10 z-10">
-                                   Mike
-                                   <MicOff size={14} className="text-red-500" />
-                               </div>
-                          </div>
-
+                          {/* Placeholder if no remote users */}
+                          {Object.keys(voiceState.remoteStreams).length === 0 && (
+                            <div className={`relative bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-lg flex flex-col group
+                                 ${voiceState.screenShareOn ? 'h-[250px]' : 'min-h-[250px]'} opacity-50
+                            `}>
+                                 <div className="w-full h-full flex items-center justify-center bg-gray-800">
+                                      <div className="text-center text-gray-500 p-4">
+                                          <Wifi size={32} className="mx-auto mb-2 opacity-50" />
+                                          <p>Waiting for peers...</p>
+                                      </div>
+                                 </div>
+                            </div>
+                          )}
                       </div>
                   </div>
                   
-                  {/* Floating Control Dock */}
                   <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-3 p-2 rounded-2xl bg-gray-900/80 backdrop-blur-2xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 transition-all hover:scale-105 hover:bg-gray-900/90">
-                      <button 
-                        onClick={() => setVoiceState(p => ({...p, muted: !p.muted}))} 
-                        className={`p-3.5 rounded-xl transition-all ${voiceState.muted ? 'bg-white text-black shadow-lg hover:bg-gray-200' : 'bg-gray-800/50 hover:bg-gray-700 text-white'}`}
-                        title={voiceState.muted ? "Unmute" : "Mute"}
-                      >
+                      <button onClick={() => setVoiceState(p => ({...p, muted: !p.muted}))} className={`p-3.5 rounded-xl transition-all ${voiceState.muted ? 'bg-white text-black shadow-lg hover:bg-gray-200' : 'bg-gray-800/50 hover:bg-gray-700 text-white'}`}>
                            {voiceState.muted ? <MicOff size={20} /> : <Mic size={20} />}
                       </button>
-                      
-                      <button 
-                        onClick={toggleCamera} 
-                        className={`p-3.5 rounded-xl transition-all ${!voiceState.cameraOn ? 'bg-gray-800/50 hover:bg-gray-700 text-white' : 'bg-white text-black shadow-lg hover:bg-gray-200'}`}
-                        title={voiceState.cameraOn ? "Turn Off Camera" : "Turn On Camera"}
-                      >
+                      <button onClick={toggleCamera} className={`p-3.5 rounded-xl transition-all ${!voiceState.cameraOn ? 'bg-gray-800/50 hover:bg-gray-700 text-white' : 'bg-white text-black shadow-lg hover:bg-gray-200'}`}>
                            {voiceState.cameraOn ? <Video size={20} /> : <VideoOff size={20} />}
                       </button>
-                      
-                      <button 
-                        onClick={toggleScreenShare} 
-                        className={`p-3.5 rounded-xl transition-all ${voiceState.screenShareOn ? 'bg-blurple-500 text-white shadow-lg shadow-blurple-500/20 hover:bg-blurple-600' : 'bg-gray-800/50 hover:bg-gray-700 text-white'}`}
-                        title="Share Screen"
-                      >
+                      <button onClick={toggleScreenShare} className={`p-3.5 rounded-xl transition-all ${voiceState.screenShareOn ? 'bg-blurple-500 text-white shadow-lg shadow-blurple-500/20 hover:bg-blurple-600' : 'bg-gray-800/50 hover:bg-gray-700 text-white'}`}>
                            <ScreenShare size={20} />
                       </button>
-
                       <div className="w-[1px] h-8 bg-white/10 mx-1" />
-                      
-                      <button 
-                        onClick={handleDisconnectVoice} 
-                        className="p-3.5 rounded-xl bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/20 transition-colors"
-                        title="Disconnect"
-                      >
+                      <button onClick={handleDisconnectVoice} className="p-3.5 rounded-xl bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/20 transition-colors">
                            <PhoneOff size={20} />
                       </button>
                   </div>
@@ -729,7 +798,6 @@ const App: React.FC = () => {
             />
           )}
         </div>
-
         {activeServerId !== 'home' && <UserList users={allUsers} />}
       </div>
 
@@ -746,11 +814,42 @@ const App: React.FC = () => {
         volume={volume}
         onVolumeChange={setVolume}
       />
+
+      <ConnectionManager 
+         isOpen={isConnectionManagerOpen}
+         onClose={() => setIsConnectionManagerOpen(false)}
+         myPeerId={myPeerId}
+         onConnect={handleConnectPeer}
+         connectionStatus={connectionStatus}
+         connectedPeers={connectedPeers}
+      />
     </div>
   );
 };
 
-// Simple Icon Component for Minimize to avoid cluttering imports
+const RemoteVideoCard = ({ stream, peerId, volume }: { stream: MediaStream, peerId: string, volume: number }) => {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    
+    useEffect(() => {
+        if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.volume = volume;
+        }
+    }, [stream, volume]);
+
+    return (
+        <div className="relative bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-lg flex flex-col group min-h-[250px]">
+            <video ref={videoRef} autoPlay className="w-full h-full object-cover" />
+            <div className="absolute bottom-4 left-4 bg-black/60 px-3 py-1.5 rounded-lg text-white text-sm font-bold backdrop-blur-md flex items-center gap-2 border border-white/10 z-10">
+                User: {peerId.substring(0,5)}
+            </div>
+            <div className="absolute top-4 right-4 bg-green-500/20 p-1.5 rounded-md backdrop-blur-sm text-green-400 border border-green-500/30">
+                <Signal size={14} />
+            </div>
+        </div>
+    );
+};
+
 const MinimizeUI = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M8 3v3a2 2 0 0 1-2 2H3" />
