@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { X, Copy, Check, Link, ArrowRight, Loader2, Share2, Users, Trash2 } from 'lucide-react';
-import { ConnectionState } from '../types';
+import { X, Copy, Check, Loader2, Share2, Users, MessageCircle } from 'lucide-react';
+import { ConnectionState, User } from '../types';
 
 interface ConnectionManagerProps {
   isOpen: boolean;
@@ -10,6 +10,8 @@ interface ConnectionManagerProps {
   onConnect: (peerId: string) => void;
   connectionStatus: ConnectionState;
   connectedPeers: string[];
+  p2pUsers: Record<string, User>;
+  onOpenChat: (peerId: string) => void;
 }
 
 const ConnectionManager: React.FC<ConnectionManagerProps> = ({ 
@@ -18,7 +20,9 @@ const ConnectionManager: React.FC<ConnectionManagerProps> = ({
   myPeerId, 
   onConnect, 
   connectionStatus,
-  connectedPeers
+  connectedPeers,
+  p2pUsers,
+  onOpenChat
 }) => {
   const [friendId, setFriendId] = useState('');
   const [copied, setCopied] = useState(false);
@@ -53,7 +57,7 @@ const ConnectionManager: React.FC<ConnectionManagerProps> = ({
            <div>
                <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Ваш ID (Отправьте друзьям)</label>
                <div className="flex gap-2">
-                   <div className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-gray-200 font-mono text-sm truncate">
+                   <div className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-gray-200 font-mono text-sm truncate select-all">
                        {myPeerId || 'Generating...'}
                    </div>
                    <button 
@@ -99,13 +103,39 @@ const ConnectionManager: React.FC<ConnectionManagerProps> = ({
                       <Users size={14} />
                       Активные подключения ({connectedPeers.length})
                   </div>
-                  <div className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar">
-                      {connectedPeers.map(peer => (
-                          <div key={peer} className="flex items-center justify-between bg-white/5 p-2 rounded-lg text-xs font-mono text-gray-300">
-                              <span className="truncate max-w-[200px]">{peer}</span>
-                              <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"></div>
-                          </div>
-                      ))}
+                  <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+                      {connectedPeers.map(peerId => {
+                          const user = p2pUsers[peerId];
+                          return (
+                            <div key={peerId} className="flex items-center justify-between bg-white/5 p-2 rounded-lg group hover:bg-white/10 transition-colors">
+                                <div className="flex items-center gap-2 overflow-hidden">
+                                    {user ? (
+                                        <>
+                                            <img src={user.avatarUrl} className="w-6 h-6 rounded-full" alt="" />
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="text-xs font-bold text-gray-200 truncate">{user.username}</span>
+                                                <span className="text-[10px] text-gray-500 font-mono truncate max-w-[80px]">ID: {peerId.substring(0,5)}...</span>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="flex flex-col min-w-0">
+                                            <span className="text-xs font-mono text-gray-300 truncate">{peerId}</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"></div>
+                                    <button 
+                                        onClick={() => { onOpenChat(peerId); onClose(); }}
+                                        className="p-1.5 bg-blurple-500 text-white rounded-md hover:bg-blurple-600 transition-colors shadow-lg"
+                                        title="Написать сообщение"
+                                    >
+                                        <MessageCircle size={14} />
+                                    </button>
+                                </div>
+                            </div>
+                          );
+                      })}
                   </div>
               </div>
            )}
