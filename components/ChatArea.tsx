@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { Channel, Message, User, ChannelType } from '../types';
 import { format } from 'date-fns';
@@ -163,10 +164,23 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       {/* Floating Header */}
       <div className="h-16 px-6 flex items-center justify-between shrink-0 z-10 glass-header">
         <div className="flex items-center gap-3 overflow-hidden">
-          {isDM ? (
-             <div className="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center text-gray-300 font-bold">@</div>
+          {isDM && otherUser ? (
+             <div className="relative shrink-0 group cursor-pointer">
+                <img 
+                  src={otherUser.avatarUrl} 
+                  className="w-10 h-10 rounded-full object-cover border border-white/10 shadow-sm transition-transform group-hover:scale-105" 
+                  alt={otherUser.username} 
+                />
+                <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-900 
+                    ${otherUser.status === 'online' ? 'bg-green-500' : 
+                      otherUser.status === 'idle' ? 'bg-yellow-500' :
+                      otherUser.status === 'dnd' ? 'bg-red-500' : 'bg-gray-500'}`} 
+                />
+             </div>
           ) : (
-             <div className="w-8 h-8 bg-gray-700/50 rounded-lg flex items-center justify-center text-gray-400"><Hash size={18} /></div>
+             <div className="w-10 h-10 bg-gray-700/50 rounded-lg flex items-center justify-center text-gray-400 shrink-0">
+               {isDM ? <span className="font-bold text-lg">@</span> : <Hash size={20} />}
+             </div>
           )}
           
           <div className="flex flex-col">
@@ -175,7 +189,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                       {isDM && otherUser ? otherUser.username : channel.name}
                   </h3>
                   {channel.name === 'ai-chat' && <span className="text-[10px] bg-gradient-to-r from-blurple-600 to-purple-600 text-white px-2 py-0.5 rounded-full font-bold shadow-lg shadow-blurple-500/20">AI</span>}
-                  {isDM && otherUser?.isBot && <span className="bg-blurple-500 text-white text-[10px] px-1.5 rounded flex items-center h-4 leading-none uppercase font-bold">Bot</span>}
+                  {isDM && otherUser?.isBot && <span className="bg-blurple-500 text-white text-[10px] px-1.5 rounded flex items-center h-4 leading-none uppercase font-bold shadow-sm">Bot</span>}
               </div>
               <span className="text-xs text-gray-400 font-medium">{channel.name === 'ai-chat' ? 'Powered by Gemini 2.5 Flash' : 'Start of conversation'}</span>
           </div>

@@ -35,6 +35,8 @@ export const CURRENT_USER: User = {
   username: 'RuUser',
   avatarUrl: 'https://picsum.photos/id/64/200/200',
   status: 'online',
+  aboutMe: 'Люблю кодить и пить кофе ☕',
+  bannerColor: '#5865F2',
 };
 
 export const GEMINI_BOT: User = {
@@ -43,16 +45,18 @@ export const GEMINI_BOT: User = {
   avatarUrl: 'https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg',
   status: 'online',
   isBot: true,
+  aboutMe: 'Я искусственный интеллект, созданный Google. Готов помочь!',
+  bannerColor: '#4752C4',
 };
 
 export const MOCK_USERS: Record<string, User> = {
   'me': CURRENT_USER,
   'gemini': GEMINI_BOT,
-  'u1': { id: 'u1', username: 'Alex', avatarUrl: 'https://picsum.photos/id/1005/200/200', status: 'online' },
-  'u2': { id: 'u2', username: 'Sarah', avatarUrl: 'https://picsum.photos/id/1011/200/200', status: 'idle' },
-  'u3': { id: 'u3', username: 'Dmitry', avatarUrl: 'https://picsum.photos/id/1012/200/200', status: 'dnd' },
-  'u4': { id: 'u4', username: 'Elena', avatarUrl: 'https://picsum.photos/id/1027/200/200', status: 'offline' },
-  'u5': { id: 'u5', username: 'Mike', avatarUrl: 'https://picsum.photos/id/1025/200/200', status: 'online' },
+  'u1': { id: 'u1', username: 'Alex', avatarUrl: 'https://picsum.photos/id/1005/200/200', status: 'online', aboutMe: 'Gamer 4 Life 🎮', bannerColor: '#10B981' },
+  'u2': { id: 'u2', username: 'Sarah', avatarUrl: 'https://picsum.photos/id/1011/200/200', status: 'idle', aboutMe: 'Designing the future.', bannerColor: '#EC4899' },
+  'u3': { id: 'u3', username: 'Dmitry', avatarUrl: 'https://picsum.photos/id/1012/200/200', status: 'dnd', aboutMe: 'Do not disturb, coding.', bannerColor: '#EF4444' },
+  'u4': { id: 'u4', username: 'Elena', avatarUrl: 'https://picsum.photos/id/1027/200/200', status: 'offline', aboutMe: 'Just passing by.', bannerColor: '#6B7280' },
+  'u5': { id: 'u5', username: 'Mike', avatarUrl: 'https://picsum.photos/id/1025/200/200', status: 'online', aboutMe: 'Music is life 🎵', bannerColor: '#F59E0B' },
 };
 
 export const INITIAL_SERVERS: Server[] = [

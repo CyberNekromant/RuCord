@@ -12,6 +12,8 @@ export interface User {
   status: 'online' | 'idle' | 'dnd' | 'offline';
   isBot?: boolean;
   password?: string; // Added for auth simulation
+  aboutMe?: string; // New field for bio
+  bannerColor?: string; // New field for profile banner color (hex)
 }
 
 export interface Message {
