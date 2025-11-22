@@ -1,8 +1,9 @@
 
 import { Server, User, ChannelType, Message, Channel } from './types';
 
-// ЗАМЕНИТЕ ЭТУ ССЫЛКУ НА URL ВАШЕЙ КАРТИНКИ
-export const LOGO_URL = 'https://img.icons8.com/3d-fluency/94/cat.png';
+// Логотип приложения (Векторная версия Neon Cat RuCord)
+// Используем Data URI, чтобы логотип работал без внешнего хостинга
+export const LOGO_URL = `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj48ZGVmcz><bGluZWFyR3JhZGllbnQgaWQ9ImdyYWQiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPjxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMwZWE1ZTk7c3RvcC1vcGFjaXR5OjEiIC8+PHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojZWM0ODk5O3N0b3Atb3BhY2l0eToxIiAvPjwvbGluZWFyR3JhZGllbnQ+PC9kZWZzPjxyZWN0IHg9IjMyIiB5PSIzMiIgd2lkdGg9NDQ4IiBoZWlnaHQ9NDQ4IiByeD0iMTIwIiBmaWxsPSJ1cmwoI2dyYWQpIiAvPjwhLS0gQ2F0IEZhY2UgLS0+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTEyMCAzMjAgTDE1MCAxNzAgTDIxMCAyMzAgTDMwMiAyMzAgMzYyIDE3MCAzOTIgMzIwIEM0MTAgMzYwIDQxMCA0MjAgMzYwIDQ1MCBDMzIwIDQ5MCAxOTIgNDkwIDE1MiA0NTAgQzEwMiA0MjAgMTAyIDM2MCAxMjAgMzIwIFoiIC8+PCEtLSBFeWVzIC0tPjxjaXJjbGUgY3g9IjIwMCIgY3k9IjMzMCIgcj0iMjUiIGZpbGw9IiMzYjgyZjYiIC8+PGNpcmNsZSBjeD0iMzEyIiBjeT0iMzMwIiByPSIyNSIgZmlsbD0iIzNiODJmNiIgLz48cGF0aCBkPSJNMjQ1IDM4MCBRMjU2IDM5MCAyNjcgMzgwIiBzdHJva2U9IiMzYjgyZjYiIHN0cm9rZS13aWR0aD0iNSIgZmlsbD0ibm9uZSIgLz48L3N2Zz4=`;
 
 export const CURRENT_USER: User = {
   id: 'me',
@@ -33,7 +34,7 @@ export const INITIAL_SERVERS: Server[] = [
   {
     id: 's1',
     name: 'RuCord Hub',
-    iconUrl: LOGO_URL,
+    iconUrl: LOGO_URL, // Используем наш новый логотип
     channels: [
       { id: 'c1', serverId: 's1', name: 'general', type: ChannelType.TEXT },
       { id: 'c2', serverId: 's1', name: 'ai-chat', type: ChannelType.TEXT },

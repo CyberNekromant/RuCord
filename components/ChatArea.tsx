@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { Channel, Message, User, ChannelType } from '../types';
 import { format } from 'date-fns';
@@ -158,44 +157,49 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const otherUser = otherUserId ? users[otherUserId] : null;
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-750 h-full min-w-0 relative">
+    <div className="flex-1 flex flex-col h-full min-w-0 relative bg-transparent">
       <input type="file" ref={fileInputRef} hidden onChange={handleFileSelect} />
       
-      {/* Header */}
-      <div className="h-12 px-4 flex items-center justify-between border-b border-gray-900 shadow-sm shrink-0 bg-gray-750 z-10">
-        <div className="flex items-center gap-2 overflow-hidden">
+      {/* Floating Header */}
+      <div className="h-16 px-6 flex items-center justify-between shrink-0 z-10 glass-header">
+        <div className="flex items-center gap-3 overflow-hidden">
           {isDM ? (
-             <span className="text-gray-400 font-bold text-lg">@</span>
+             <div className="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center text-gray-300 font-bold">@</div>
           ) : (
-             <Hash className="text-gray-400 shrink-0" size={24} />
+             <div className="w-8 h-8 bg-gray-700/50 rounded-lg flex items-center justify-center text-gray-400"><Hash size={18} /></div>
           )}
           
-          <h3 className="font-bold text-white truncate">{isDM && otherUser ? otherUser.username : channel.name}</h3>
-          
-          {channel.name === 'ai-chat' && <span className="text-xs bg-blurple-500/20 text-blurple-400 px-2 py-0.5 rounded border border-blurple-500/30">AI Powered</span>}
-          
-          {isDM && otherUser?.isBot && <span className="bg-blurple-500 text-white text-[10px] px-1.5 rounded flex items-center h-4 leading-none uppercase font-bold">Bot</span>}
+          <div className="flex flex-col">
+              <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-white truncate text-lg tracking-tight">
+                      {isDM && otherUser ? otherUser.username : channel.name}
+                  </h3>
+                  {channel.name === 'ai-chat' && <span className="text-[10px] bg-gradient-to-r from-blurple-600 to-purple-600 text-white px-2 py-0.5 rounded-full font-bold shadow-lg shadow-blurple-500/20">AI</span>}
+                  {isDM && otherUser?.isBot && <span className="bg-blurple-500 text-white text-[10px] px-1.5 rounded flex items-center h-4 leading-none uppercase font-bold">Bot</span>}
+              </div>
+              <span className="text-xs text-gray-400 font-medium">{channel.name === 'ai-chat' ? 'Powered by Gemini 2.5 Flash' : 'Start of conversation'}</span>
+          </div>
         </div>
         
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
             {isDM && !otherUser?.isBot && (
-                <div className="flex items-center gap-2 mr-2 border-r border-gray-600 pr-4">
-                    <button onClick={() => onStartCall(false)} className="text-gray-400 hover:text-white p-1.5 hover:bg-gray-800 rounded-full transition-colors" title="Аудиозвонок">
-                        <Phone size={20} />
+                <div className="flex items-center gap-2 mr-2 bg-black/20 rounded-full p-1 border border-white/5">
+                    <button onClick={() => onStartCall(false)} className="text-gray-400 hover:text-white p-2 hover:bg-white/10 rounded-full transition-colors" title="Аудиозвонок">
+                        <Phone size={18} />
                     </button>
-                    <button onClick={() => onStartCall(true)} className="text-gray-400 hover:text-white p-1.5 hover:bg-gray-800 rounded-full transition-colors" title="Видеозвонок">
-                        <Video size={22} />
+                    <button onClick={() => onStartCall(true)} className="text-gray-400 hover:text-white p-2 hover:bg-white/10 rounded-full transition-colors" title="Видеозвонок">
+                        <Video size={18} />
                     </button>
                 </div>
             )}
 
             <button 
                 onClick={handleSummarize}
-                className="text-gray-400 hover:text-blurple-400 transition-colors flex items-center gap-1 text-sm font-medium"
+                className="text-gray-300 hover:text-white hover:bg-blurple-500/20 border border-transparent hover:border-blurple-500/50 transition-all rounded-lg px-3 py-1.5 flex items-center gap-2 text-sm font-medium"
                 title="Summarize last messages"
             >
-                <Sparkles size={18} />
-                <span className="hidden sm:inline">Кратко</span>
+                <Sparkles size={16} className="text-blurple-400" />
+                <span className="hidden sm:inline">AI Summary</span>
             </button>
         </div>
       </div>
@@ -203,35 +207,37 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 custom-scrollbar flex flex-col">
         {messages.length === 0 ? (
-            <div className="mt-auto mb-6">
+            <div className="mt-auto mb-8 mx-4">
                 {isDM && otherUser ? (
                     <div className="flex flex-col items-start">
-                        <img src={otherUser.avatarUrl} className="w-20 h-20 rounded-full mb-4" />
-                        <h1 className="text-3xl font-bold text-white mb-2">{otherUser.username}</h1>
-                        <p className="text-gray-400">Это начало вашей легендарной переписки с @{otherUser.username}.</p>
+                        <div className="w-24 h-24 rounded-full mb-4 p-1 bg-gradient-to-br from-blurple-500 to-pink-500">
+                            <img src={otherUser.avatarUrl} className="w-full h-full rounded-full border-4 border-gray-900" />
+                        </div>
+                        <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400 mb-2">{otherUser.username}</h1>
+                        <p className="text-gray-400 text-lg">Начало вашей легендарной истории с @{otherUser.username}.</p>
                     </div>
                 ) : (
-                    <>
-                        <div className="w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center mb-4">
+                    <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 border border-white/5 p-8 rounded-3xl backdrop-blur-sm">
+                        <div className="w-16 h-16 bg-gray-700/50 rounded-2xl flex items-center justify-center mb-4 shadow-inner">
                             <Hash size={40} className="text-white" />
                         </div>
-                        <h1 className="text-3xl font-bold text-white mb-2">Добро пожаловать в #{channel.name}!</h1>
-                        <p className="text-gray-400">Это начало легендарного канала.</p>
-                    </>
+                        <h1 className="text-4xl font-extrabold text-white mb-2 tracking-tight">Welcome to #{channel.name}!</h1>
+                        <p className="text-gray-400 text-lg">Это начало канала. Будьте вежливы и креативны.</p>
+                    </div>
                 )}
             </div>
         ) : (
-            <div className="mt-auto flex flex-col justify-end min-h-0 pb-2">
+            <div className="mt-auto flex flex-col justify-end min-h-0 pb-4">
                 {/* Summary Banner */}
                 {summary && (
-                    <div className="bg-gray-900/60 border border-blurple-500/30 rounded-xl p-4 mb-6 animate-fade-in backdrop-blur-sm relative group">
-                        <div className="flex items-center gap-2 text-blurple-400 font-bold mb-2 text-sm uppercase tracking-wider">
-                            <Sparkles size={16} />
-                            AI Summary
+                    <div className="mx-4 bg-gradient-to-r from-blurple-900/40 to-purple-900/40 border border-blurple-500/30 rounded-2xl p-5 mb-6 animate-fade-in backdrop-blur-md relative group shadow-lg">
+                        <div className="flex items-center gap-2 text-blurple-300 font-bold mb-3 text-xs uppercase tracking-widest">
+                            <Sparkles size={14} />
+                            AI Summary generated
                         </div>
-                        <p className="text-gray-200 text-sm leading-relaxed">{summary}</p>
-                        <button onClick={() => setSummary(null)} className="absolute top-2 right-2 p-1 text-gray-500 hover:text-gray-200 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <X size={16} />
+                        <p className="text-gray-100 text-sm leading-relaxed font-medium">{summary}</p>
+                        <button onClick={() => setSummary(null)} className="absolute top-3 right-3 p-1.5 bg-black/20 rounded-full text-gray-400 hover:text-white transition-colors">
+                          <X size={14} />
                         </button>
                     </div>
                 )}
@@ -252,7 +258,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                     return (
                         <div 
                           key={msg.id} 
-                          className={`group relative flex flex-col pr-4 hover:bg-black/5 -mx-4 px-4 ${showHeader ? 'mt-[17px]' : 'mt-[2px]'} py-0.5 transition-colors`}
+                          className={`group relative flex flex-col pr-4 hover:bg-black/10 rounded-lg -mx-2 px-4 ${showHeader ? 'mt-6' : 'mt-0.5'} py-1 transition-colors duration-200`}
                           onMouseEnter={() => setHoveredMessageId(msg.id)}
                           onMouseLeave={() => setHoveredMessageId(null)}
                         >
@@ -275,7 +281,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                                       <img 
                                           src={displayUser.avatarUrl} 
                                           alt={displayUser.username} 
-                                          className="w-10 h-10 rounded-full object-cover hover:shadow-lg transition-shadow active:translate-y-0.5" 
+                                          className="w-10 h-10 rounded-full object-cover shadow-md transition-transform hover:scale-105" 
                                       />
                                   </div>
                               ) : (
@@ -288,11 +294,11 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                                   {/* Username & Time Header */}
                                   {showHeader && (
                                       <div className="flex items-center gap-2">
-                                          <span className={`font-medium hover:underline cursor-pointer ${isAI ? 'text-blurple-400' : 'text-white'}`}>
+                                          <span className={`font-bold hover:underline cursor-pointer tracking-tight ${isAI ? 'text-transparent bg-clip-text bg-gradient-to-r from-blurple-400 to-purple-400' : 'text-white'}`}>
                                               {displayUser.username}
                                           </span>
-                                          {displayUser.isBot && <span className="bg-blurple-500 text-white text-[10px] px-1.5 py-0.5 rounded flex items-center h-4 leading-none uppercase font-bold">Bot</span>}
-                                          <span className="text-xs text-gray-400 ml-1 font-medium">
+                                          {displayUser.isBot && <span className="bg-blurple-500 text-white text-[10px] px-1.5 py-0.5 rounded flex items-center h-4 leading-none uppercase font-bold shadow-sm">Bot</span>}
+                                          <span className="text-xs text-gray-500 ml-1 font-medium">
                                               {format(msg.timestamp, 'dd.MM.yyyy HH:mm', { locale: ru })}
                                           </span>
                                       </div>
@@ -301,19 +307,21 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                                   {/* Content */}
                                   <div className={`text-gray-300 whitespace-pre-wrap leading-relaxed ${isAI ? 'text-gray-100' : ''} ${msg.isEdited ? 'text-gray-200' : ''}`}>
                                       {displayContent}
-                                      {msg.isEdited && <span className="text-[10px] text-gray-500 ml-1">(изм.)</span>}
+                                      {msg.isEdited && <span className="text-[10px] text-gray-500 ml-1 select-none">(изм.)</span>}
                                   </div>
                                   
                                   {/* Attachments */}
                                   {msg.attachments && msg.attachments.length > 0 && (
-                                      <div className="flex flex-wrap gap-2 mt-2">
+                                      <div className="flex flex-wrap gap-3 mt-3">
                                           {msg.attachments.map((att, i) => (
-                                              <div key={i} className="rounded-lg overflow-hidden border border-gray-800 bg-gray-900 max-w-xs">
+                                              <div key={i} className="rounded-xl overflow-hidden border border-white/10 bg-black/20 max-w-xs shadow-lg transition-transform hover:scale-[1.02]">
                                                   {att.type === 'image' ? (
-                                                      <img src={att.url} alt={att.name} className="max-h-60 object-contain cursor-pointer" />
+                                                      <img src={att.url} alt={att.name} className="max-h-64 object-contain cursor-pointer" />
                                                   ) : (
-                                                      <div className="flex items-center gap-3 p-3">
-                                                          <FileIcon size={24} className="text-blurple-400" />
+                                                      <div className="flex items-center gap-3 p-4">
+                                                          <div className="p-2 bg-blurple-500/20 rounded-lg">
+                                                            <FileIcon size={24} className="text-blurple-400" />
+                                                          </div>
                                                           <div className="text-sm truncate max-w-[150px]">
                                                               <div className="text-white font-medium truncate">{att.name}</div>
                                                               <div className="text-gray-500 text-xs">File</div>
@@ -327,15 +335,15 @@ const ChatArea: React.FC<ChatAreaProps> = ({
 
                                   {/* Reactions */}
                                   {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                                    <div className="flex flex-wrap gap-1 mt-1.5">
+                                    <div className="flex flex-wrap gap-1.5 mt-2">
                                       {Object.entries(msg.reactions).map(([emoji, userIds]) => (
                                         <button 
                                           key={emoji}
                                           onClick={() => onAddReaction(msg.id, emoji)}
-                                          className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-sm transition-all
+                                          className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-sm transition-all shadow-sm
                                             ${userIds.includes(currentUser.id) 
                                               ? 'bg-blurple-500/20 border-blurple-500/50 text-blurple-300' 
-                                              : 'bg-gray-800 border-transparent hover:border-gray-600 text-gray-300'}`}
+                                              : 'bg-gray-800/50 border-transparent hover:border-gray-600 text-gray-300 hover:bg-gray-700'}`}
                                         >
                                           <span>{emoji}</span>
                                           <span className="font-bold text-xs">{userIds.length}</span>
@@ -347,15 +355,15 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                             </div>
 
                             {/* Hover Actions Toolbar */}
-                            <div className={`absolute right-4 -top-2 bg-gray-900 border border-gray-800 rounded-md shadow-lg flex items-center p-0.5 transition-opacity duration-200 ${hoveredMessageId === msg.id ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-                               <button onClick={() => onAddReaction(msg.id, '👍')} className="p-1.5 text-gray-400 hover:text-yellow-400 hover:bg-gray-800 rounded"><Smile size={18} /></button>
-                               <button onClick={() => handleStartReply(msg)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded"><Reply size={18} /></button>
+                            <div className={`absolute right-4 -top-4 bg-gray-900 border border-gray-700 rounded-lg shadow-xl flex items-center p-1 transition-all duration-200 scale-95 ${hoveredMessageId === msg.id ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 pointer-events-none translate-y-2'}`}>
+                               <button onClick={() => onAddReaction(msg.id, '👍')} className="p-2 text-gray-400 hover:text-yellow-400 hover:bg-gray-800 rounded-md transition-colors"><Smile size={18} /></button>
+                               <button onClick={() => handleStartReply(msg)} className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors"><Reply size={18} /></button>
                                {isMe && (
-                                 <button onClick={() => handleStartEdit(msg)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded"><Pencil size={18} /></button>
+                                 <button onClick={() => handleStartEdit(msg)} className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors"><Pencil size={18} /></button>
                                )}
-                               <button onClick={() => handleExplain(msg)} className="p-1.5 text-gray-400 hover:text-blurple-400 hover:bg-gray-800 rounded" title="Ask AI to explain"><Sparkles size={18} /></button>
+                               <button onClick={() => handleExplain(msg)} className="p-2 text-gray-400 hover:text-blurple-400 hover:bg-gray-800 rounded-md transition-colors" title="Ask AI to explain"><Sparkles size={18} /></button>
                                {isMe && (
-                                 <button onClick={() => onDeleteMessage(msg.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-gray-800 rounded"><Trash2 size={18} /></button>
+                                 <button onClick={() => onDeleteMessage(msg.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-gray-800 rounded-md transition-colors"><Trash2 size={18} /></button>
                                )}
                             </div>
                         </div>
@@ -366,30 +374,30 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         
         {/* Loading / Typing Indicators */}
         {(isTyping || loadingSummary) && (
-           <div className="flex items-center gap-2 px-2 pb-2 text-gray-400 text-sm font-medium animate-pulse">
-              <Bot size={16} />
-              <span>{loadingSummary ? 'Gemini анализирует чат...' : 'Gemini печатает...'}</span>
+           <div className="flex items-center gap-2 px-6 pb-2 text-gray-400 text-xs font-bold uppercase tracking-wider animate-pulse">
+              <Bot size={14} className="text-blurple-400" />
+              <span>{loadingSummary ? 'Gemini анализирует контекст...' : 'Gemini печатает...'}</span>
            </div>
         )}
         <div ref={bottomRef} />
       </div>
 
       {/* Input Area */}
-      <div className="px-4 pb-6 pt-2 shrink-0 relative">
+      <div className="px-4 pb-6 pt-2 shrink-0 relative z-20">
         {/* Attachments Preview */}
         {attachments.length > 0 && (
-            <div className="flex gap-3 px-4 py-3 bg-gray-800/50 border-t border-l border-r border-gray-800 rounded-t-xl overflow-x-auto">
+            <div className="flex gap-3 px-4 py-3 bg-gray-900/80 border border-white/10 backdrop-blur-md rounded-t-2xl overflow-x-auto mx-2 shadow-2xl">
                 {attachments.map((att, i) => (
-                    <div key={i} className="relative group w-24 h-24 bg-gray-900 rounded-md border border-gray-700 flex items-center justify-center overflow-hidden shrink-0">
+                    <div key={i} className="relative group w-24 h-24 bg-black/40 rounded-xl border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
                         {att.file.type.startsWith('image/') ? (
                             <img src={att.previewUrl} className="w-full h-full object-cover" />
                         ) : (
                             <FileIcon className="text-gray-400" />
                         )}
-                        <button onClick={() => removeAttachment(i)} className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => removeAttachment(i)} className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
                             <X size={12} />
                         </button>
-                        <div className="absolute bottom-0 w-full bg-black/60 text-[10px] text-white p-1 truncate">
+                        <div className="absolute bottom-0 w-full bg-black/60 text-[10px] text-white p-1 truncate text-center backdrop-blur-sm">
                             {att.file.name}
                         </div>
                     </div>
@@ -399,9 +407,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
 
         {/* Reply/Edit Banner */}
         {(replyingTo || editingMessageId) && (
-          <div className="flex items-center justify-between bg-gray-800/80 backdrop-blur-sm text-gray-300 px-4 py-2 rounded-t-lg text-sm border-b border-black/20">
+          <div className="flex items-center justify-between bg-gray-800/90 backdrop-blur-md text-gray-300 px-4 py-2 rounded-t-xl text-sm border-b border-white/5 mx-2 shadow-lg">
              <div className="flex items-center gap-2 overflow-hidden">
-                {editingMessageId ? <Pencil size={14} /> : <CornerDownRight size={14} />}
+                {editingMessageId ? <Pencil size={14} className="text-blue-400" /> : <CornerDownRight size={14} className="text-gray-400" />}
                 <span className="font-bold">{editingMessageId ? 'Редактирование:' : `Ответ ${users[replyingTo!.userId]?.username}:`}</span>
                 <span className="truncate opacity-70 italic max-w-[300px]">
                    {editingMessageId ? messages.find(m => m.id === editingMessageId)?.content : replyingTo?.content.replace('[AI]:', '')}
@@ -411,14 +419,15 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           </div>
         )}
 
-        <div className={`bg-gray-850 flex items-center p-3 shadow-lg ring-1 ring-white/5 focus-within:ring-blurple-400/50 transition-all 
-            ${replyingTo || editingMessageId ? 'rounded-b-2xl' : attachments.length > 0 ? 'rounded-b-2xl' : 'rounded-2xl'}`}>
+        {/* Floating Input Bar */}
+        <div className={`bg-gray-900/80 backdrop-blur-xl flex items-center p-2 shadow-2xl border transition-all duration-300 group focus-within:border-blurple-500/50 focus-within:shadow-blurple-500/10 focus-within:ring-1 focus-within:ring-blurple-500/30
+            ${replyingTo || editingMessageId ? 'rounded-b-3xl mx-2 border-white/10' : attachments.length > 0 ? 'rounded-b-3xl mx-2 border-white/10' : 'rounded-[28px] border-white/10'}`}>
           
           <button 
             onClick={() => fileInputRef.current?.click()}
-            className="p-2 text-gray-400 hover:text-gray-200 bg-gray-800 rounded-full mr-2 transition-colors"
+            className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-full mr-2 transition-colors"
           >
-            <PlusCircle size={20} />
+            <PlusCircle size={22} />
           </button>
           
           <input
@@ -429,34 +438,39 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             onKeyDown={handleKeyDown}
             autoComplete="off"
             placeholder={editingMessageId ? "Редактировать сообщение..." : `Написать в ${isDM && otherUser ? '@' + otherUser.username : '#' + channel.name}`}
-            className="flex-1 bg-transparent text-gray-100 placeholder-gray-500 focus:outline-none font-medium"
+            className="flex-1 bg-transparent text-gray-100 placeholder-gray-500 focus:outline-none font-medium h-10"
           />
-          <div className="flex items-center gap-2 ml-2">
-            <button className="p-2 text-gray-400 hover:text-yellow-400 transition-colors">
-              <Gift size={20} />
+          <div className="flex items-center gap-1 ml-2">
+            <button className="p-2 text-gray-400 hover:text-pink-400 transition-colors rounded-full hover:bg-white/5">
+              <Gift size={22} />
             </button>
             
             <div className="relative group">
-                <button className="p-2 text-gray-400 hover:text-yellow-400 transition-colors">
-                    <Smile size={20} />
+                <button className="p-2 text-gray-400 hover:text-yellow-400 transition-colors rounded-full hover:bg-white/5">
+                    <Smile size={22} />
                 </button>
-                <div className="absolute bottom-full right-0 mb-2 hidden group-hover:flex bg-gray-900 border border-gray-800 p-1 rounded shadow-xl gap-1">
+                <div className="absolute bottom-full right-0 mb-4 hidden group-hover:flex bg-gray-900 border border-white/10 p-2 rounded-xl shadow-2xl gap-1 backdrop-blur-xl animate-fade-in">
                     {POPULAR_REACTIONS.map(emoji => (
-                        <button key={emoji} onClick={() => setInputValue(p => p + emoji)} className="hover:bg-gray-700 p-1 rounded">{emoji}</button>
+                        <button key={emoji} onClick={() => setInputValue(p => p + emoji)} className="hover:bg-white/10 p-2 rounded-lg text-lg transition-colors">{emoji}</button>
                     ))}
                 </div>
             </div>
             
             {(inputValue.length > 0 || editingMessageId || attachments.length > 0) && (
-                <button onClick={handleSend} className="p-2 text-blurple-400 hover:text-blurple-300 transition-colors">
+                <button onClick={handleSend} className="p-2 bg-blurple-500 hover:bg-blurple-400 text-white rounded-full transition-all duration-200 shadow-lg shadow-blurple-500/30 hover:scale-105 ml-1">
                     <SendHorizontal size={20} />
                 </button>
             )}
           </div>
         </div>
         
-        <div className="text-[10px] text-gray-600 text-right mt-1 px-2 font-mono">
-            {editingMessageId ? 'Esc - отмена • Enter - сохранить' : 'Попробуйте /ai [вопрос] для вызова бота'}
+        <div className="flex justify-between px-4 mt-2">
+           <div className="text-[10px] text-gray-600 font-mono">
+              AI Powered Chat
+           </div>
+           <div className="text-[10px] text-gray-600 font-mono">
+              {editingMessageId ? 'Esc - отмена • Enter - сохранить' : '/ai [вопрос] для вызова бота'}
+           </div>
         </div>
       </div>
     </div>

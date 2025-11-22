@@ -8,7 +8,7 @@ import AuthScreen from './components/AuthScreen';
 import SettingsModal from './components/SettingsModal';
 import { INITIAL_SERVERS, INITIAL_MESSAGES, MOCK_USERS, CURRENT_USER, GEMINI_BOT, INITIAL_DMS } from './constants';
 import { ChannelType, Message, User, Channel } from './types';
-import { Mic, Video, Monitor, PhoneOff, MicOff, VideoOff, ScreenShare } from 'lucide-react';
+import { Mic, Video, Monitor, PhoneOff, MicOff, VideoOff, ScreenShare, LayoutGrid, Maximize2, Wifi, Signal } from 'lucide-react';
 import { soundService } from './services/soundService';
 
 const App: React.FC = () => {
@@ -493,10 +493,6 @@ const App: React.FC = () => {
      if (type === 'mic') setSelectedMicId(deviceId);
      if (type === 'cam') setSelectedCamId(deviceId);
      if (type === 'speaker') setSelectedSpeakerId(deviceId);
-     
-     // If connected, we might want to restart the stream to apply changes immediately.
-     // For simplicity in this demo, changes apply on next call/toggle.
-     // Ideally, we would renegotiate the stream here.
   };
 
   // --- Render Auth Screen if not logged in ---
@@ -508,10 +504,32 @@ const App: React.FC = () => {
   // Determine what to show in the video grid
   const showCallOverlay = voiceState.connected && voiceState.channelId === activeChannel.id && (voiceState.cameraOn || voiceState.screenShareOn);
   
+  // Find the name of the connected voice channel (if any)
+  let connectedChannelName = '';
+  if (voiceState.connected && voiceState.channelId) {
+      // Search in active server first
+      const inCurrentServer = activeServer?.channels.find(c => c.id === voiceState.channelId);
+      if (inCurrentServer) {
+          connectedChannelName = inCurrentServer.name;
+      } else {
+          // Search all servers
+          for (const s of INITIAL_SERVERS) {
+              const ch = s.channels.find(c => c.id === voiceState.channelId);
+              if (ch) {
+                  connectedChannelName = `${ch.name} / ${s.name}`;
+                  break;
+              }
+          }
+      }
+  }
+
   return (
-    <div className="flex w-full h-screen bg-gray-950 overflow-hidden font-sans text-gray-100 selection:bg-blurple-500 selection:text-white" onClick={() => soundService.resumeContext()}>
+    <div className="flex w-full h-screen font-sans text-gray-100 selection:bg-blurple-500 selection:text-white relative z-0" onClick={() => soundService.resumeContext()}>
       
-      <nav className="shrink-0 h-full">
+      {/* Subtle glass backdrop for the whole app */}
+      <div className="absolute inset-0 z-0 pointer-events-none bg-black/10" />
+
+      <nav className="shrink-0 h-full relative z-20">
         <ServerList 
           servers={INITIAL_SERVERS} 
           activeServerId={activeServerId} 
@@ -519,7 +537,7 @@ const App: React.FC = () => {
         />
       </nav>
 
-      <div className="flex flex-1 min-w-0 bg-gray-850 rounded-tl-3xl overflow-hidden shadow-2xl my-0 border-t border-l border-white/5 relative">
+      <div className="flex flex-1 min-w-0 bg-gray-900/40 backdrop-blur-md rounded-tl-[32px] overflow-hidden shadow-2xl my-2 mr-2 border border-white/5 relative z-10">
         
         <ChannelList 
           activeServerId={activeServerId}
@@ -530,127 +548,175 @@ const App: React.FC = () => {
           onSelectChannel={handleChannelSelect}
           currentUser={currentUser}
           voiceState={voiceState}
+          connectedChannelName={connectedChannelName}
           onToggleMute={() => setVoiceState(p => ({...p, muted: !p.muted}))}
           onToggleDeafen={() => setVoiceState(p => ({...p, deafened: !p.deafened}))}
+          onDisconnect={handleDisconnectVoice}
+          onToggleCamera={toggleCamera}
+          onToggleScreenShare={toggleScreenShare}
           onChangeStatus={(s) => setCurrentUser(p => ({...p, status: s}))}
           onCreateDM={handleCreateDM}
           onOpenSettings={() => setIsSettingsOpen(true)}
         />
 
         {/* Main Content */}
-        <div className="flex-1 flex flex-col min-w-0 relative">
+        <div className="flex-1 flex flex-col min-w-0 relative bg-white/5">
           {/* CALL OVERLAY */}
           {showCallOverlay ? (
-              <div className="flex-1 bg-black relative flex flex-col p-4">
-                  {/* Dynamic Video Grid */}
-                  <div className={`flex-1 grid gap-4 items-center justify-center p-4 
-                      ${(voiceState.cameraOn && voiceState.screenShareOn) ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 md:grid-cols-2'}`}>
-                      
-                      {/* 1. Screen Share Window (Priority) */}
-                      {voiceState.screenShareOn && (
-                          <div className="relative w-full h-full min-h-[200px] bg-gray-800 rounded-xl overflow-hidden border border-blurple-500 shadow-2xl flex flex-col">
-                               <video ref={screenVideoRef} autoPlay muted className="w-full h-full object-contain bg-black" />
-                               <div className="absolute top-4 left-4 bg-blurple-600 px-2 py-1 rounded text-white text-xs font-bold flex items-center gap-2 shadow-lg">
-                                   <ScreenShare size={14} />
-                                   ВАШ ЭКРАН
+              <div className="flex-1 bg-black relative flex flex-col p-0 overflow-hidden">
+                  {/* Top Info Bar */}
+                  <div className="absolute top-4 left-4 z-20 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
+                     <Signal size={14} className="text-green-500" />
+                     <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">Connected: {activeChannel.name}</span>
+                  </div>
+                  <button 
+                     onClick={() => toggleCamera()} 
+                     className="absolute top-4 right-4 z-20 bg-black/60 text-white px-3 py-1.5 rounded-full border border-white/10 hover:bg-gray-800 transition-colors text-xs font-medium"
+                  >
+                      <MinimizeUI />
+                  </button>
+
+                  {/* Responsive Video Grid */}
+                  <div className="flex-1 p-4 overflow-y-auto custom-scrollbar flex items-center justify-center">
+                      <div className={`grid gap-4 w-full max-w-7xl transition-all duration-300
+                          ${voiceState.screenShareOn 
+                             ? 'grid-cols-1 lg:grid-cols-[3fr_1fr] h-full' 
+                             : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 auto-rows-[minmax(200px,1fr)]'
+                          }
+                      `}>
+                          
+                          {/* 1. Screen Share Stage (Takes Priority if On) */}
+                          {voiceState.screenShareOn && (
+                              <div className="relative bg-gray-900 rounded-2xl overflow-hidden border border-blurple-500/50 shadow-2xl group col-span-1 lg:row-span-2 h-full">
+                                   <video ref={screenVideoRef} autoPlay muted className="w-full h-full object-contain bg-black" />
+                                   
+                                   <div className="absolute top-4 left-4 bg-blurple-600 px-3 py-1.5 rounded-lg text-white text-xs font-bold flex items-center gap-2 shadow-lg border border-white/10 z-10">
+                                       <ScreenShare size={14} />
+                                       LIVE SCREEN
+                                   </div>
+                                   
+                                   {/* Hover Controls */}
+                                   <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <div className="text-white font-bold text-lg">{currentUser.username}'s Screen</div>
+                                   </div>
+                              </div>
+                          )}
+
+                          {/* 2. Local Camera User */}
+                          <div className={`relative bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-lg flex flex-col group
+                               ${voiceState.screenShareOn ? 'h-[250px]' : 'min-h-[250px]'}
+                          `}>
+                               {voiceState.cameraOn ? (
+                                   <video ref={cameraVideoRef} autoPlay muted className="w-full h-full object-cover transform scale-x-[-1]" />
+                               ) : (
+                                   <div className="w-full h-full flex items-center justify-center bg-gray-800 relative">
+                                        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/40" />
+                                        <img src={currentUser.avatarUrl} className="w-24 h-24 rounded-full border-4 border-gray-700 shadow-xl z-10" />
+                                   </div>
+                               )}
+                               
+                               {/* Name Tag */}
+                               <div className="absolute bottom-4 left-4 bg-black/60 px-3 py-1.5 rounded-lg text-white text-sm font-bold backdrop-blur-md flex items-center gap-2 border border-white/10 z-10">
+                                   <div className="relative">
+                                      <img src={currentUser.avatarUrl} className="w-5 h-5 rounded-full" />
+                                      {voiceState.muted && (
+                                        <div className="absolute -bottom-1 -right-1 bg-red-500 rounded-full p-0.5 border border-black">
+                                          <MicOff size={8} />
+                                        </div>
+                                      )}
+                                   </div>
+                                   {currentUser.username} (You)
+                               </div>
+                               
+                               {/* Connection Quality */}
+                               <div className="absolute top-4 right-4 bg-black/40 p-1.5 rounded-md backdrop-blur-sm">
+                                   <Wifi size={14} className="text-green-500" />
+                               </div>
+                               
+                               {/* Active Speaker Ring */}
+                               <div className={`absolute inset-0 border-4 ${voiceState.muted ? 'border-transparent' : 'border-green-500/50'} rounded-2xl pointer-events-none transition-colors duration-300`} />
+                          </div>
+
+                          {/* 3. Mock Participant 1 */}
+                          <div className={`relative bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-lg flex flex-col group
+                               ${voiceState.screenShareOn ? 'h-[250px]' : 'min-h-[250px]'}
+                          `}>
+                               <div className="w-full h-full flex items-center justify-center bg-gray-800 relative">
+                                    <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/20 to-purple-900/20" />
+                                    <img src="https://picsum.photos/id/1011/200/200" className="w-24 h-24 rounded-full border-4 border-gray-700 shadow-xl z-10" />
+                                    <div className="absolute w-28 h-28 rounded-full border-2 border-green-500/30 animate-ping z-0" />
+                               </div>
+                               <div className="absolute bottom-4 left-4 bg-black/60 px-3 py-1.5 rounded-lg text-white text-sm font-bold backdrop-blur-md flex items-center gap-2 border border-white/10 z-10">
+                                   Sarah
+                               </div>
+                               <div className="absolute inset-0 border-4 border-green-500/50 rounded-2xl pointer-events-none" />
+                          </div>
+
+                          {/* 4. Mock Participant 2 */}
+                          <div className={`relative bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-lg flex flex-col group
+                               ${voiceState.screenShareOn ? 'h-[250px]' : 'min-h-[250px]'}
+                          `}>
+                               <div className="w-full h-full flex items-center justify-center bg-gray-800 relative">
+                                    <img src="https://picsum.photos/id/1025/200/200" className="w-24 h-24 rounded-full border-4 border-gray-700 shadow-xl opacity-60 grayscale" />
+                               </div>
+                               <div className="absolute bottom-4 left-4 bg-black/60 px-3 py-1.5 rounded-lg text-white text-sm font-bold backdrop-blur-md flex items-center gap-2 border border-white/10 z-10">
+                                   Mike
+                                   <MicOff size={14} className="text-red-500" />
                                </div>
                           </div>
-                      )}
 
-                      {/* 2. Camera Window */}
-                      <div className="relative w-full h-full min-h-[200px] bg-gray-800 rounded-xl overflow-hidden border border-gray-700 shadow-2xl flex flex-col">
-                           {voiceState.cameraOn ? (
-                               <video ref={cameraVideoRef} autoPlay muted className="w-full h-full object-cover transform scale-x-[-1]" />
-                           ) : (
-                               <div className="w-full h-full flex items-center justify-center bg-gray-900">
-                                    <img src={currentUser.avatarUrl} className="w-24 h-24 rounded-full opacity-50" />
-                               </div>
-                           )}
-                           <div className="absolute bottom-4 left-4 bg-black/50 px-2 py-1 rounded text-white text-sm font-bold backdrop-blur-md flex items-center gap-2">
-                               <img src={currentUser.avatarUrl} className="w-5 h-5 rounded-full"/>
-                               {currentUser.username} (Вы)
-                               {voiceState.muted && <MicOff size={14} className="text-red-500" />}
-                           </div>
-                      </div>
-
-                      {/* 3. Mock Other User Window */}
-                      <div className="relative w-full h-full min-h-[200px] bg-gray-800 rounded-xl overflow-hidden border border-gray-700 flex items-center justify-center">
-                           <div className="w-24 h-24 rounded-full bg-gray-600 flex items-center justify-center animate-pulse">
-                               <span className="text-2xl">👤</span>
-                           </div>
-                           <div className="absolute bottom-4 left-4 bg-black/50 px-2 py-1 rounded text-white text-sm font-bold backdrop-blur-md">
-                               Собеседник
-                           </div>
                       </div>
                   </div>
                   
-                  {/* Call Controls */}
-                  <div className="h-20 flex items-center justify-center gap-4 mt-auto shrink-0 bg-gradient-to-t from-black via-black/80 to-transparent pb-4">
-                      <button onClick={() => setVoiceState(p => ({...p, muted: !p.muted}))} className={`p-4 rounded-full transition-all shadow-lg ${voiceState.muted ? 'bg-white text-black' : 'bg-gray-800 hover:bg-gray-700'}`}>
-                           {voiceState.muted ? <MicOff /> : <Mic />}
+                  {/* Floating Control Dock */}
+                  <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-3 p-2 rounded-2xl bg-gray-900/80 backdrop-blur-2xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 transition-all hover:scale-105 hover:bg-gray-900/90">
+                      <button 
+                        onClick={() => setVoiceState(p => ({...p, muted: !p.muted}))} 
+                        className={`p-3.5 rounded-xl transition-all ${voiceState.muted ? 'bg-white text-black shadow-lg hover:bg-gray-200' : 'bg-gray-800/50 hover:bg-gray-700 text-white'}`}
+                        title={voiceState.muted ? "Unmute" : "Mute"}
+                      >
+                           {voiceState.muted ? <MicOff size={20} /> : <Mic size={20} />}
                       </button>
-                      <button onClick={toggleCamera} className={`p-4 rounded-full transition-all shadow-lg ${!voiceState.cameraOn ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white text-black'}`}>
-                           {voiceState.cameraOn ? <Video /> : <VideoOff />}
+                      
+                      <button 
+                        onClick={toggleCamera} 
+                        className={`p-3.5 rounded-xl transition-all ${!voiceState.cameraOn ? 'bg-gray-800/50 hover:bg-gray-700 text-white' : 'bg-white text-black shadow-lg hover:bg-gray-200'}`}
+                        title={voiceState.cameraOn ? "Turn Off Camera" : "Turn On Camera"}
+                      >
+                           {voiceState.cameraOn ? <Video size={20} /> : <VideoOff size={20} />}
                       </button>
-                      <button onClick={toggleScreenShare} className={`p-4 rounded-full transition-all shadow-lg ${voiceState.screenShareOn ? 'bg-blurple-500 text-white hover:bg-blurple-600' : 'bg-gray-800 hover:bg-gray-700'}`}>
-                           <ScreenShare />
+                      
+                      <button 
+                        onClick={toggleScreenShare} 
+                        className={`p-3.5 rounded-xl transition-all ${voiceState.screenShareOn ? 'bg-blurple-500 text-white shadow-lg shadow-blurple-500/20 hover:bg-blurple-600' : 'bg-gray-800/50 hover:bg-gray-700 text-white'}`}
+                        title="Share Screen"
+                      >
+                           <ScreenShare size={20} />
                       </button>
-                      <button onClick={handleDisconnectVoice} className="p-4 rounded-full bg-red-500 hover:bg-red-600 text-white px-8 font-bold shadow-lg">
-                           <PhoneOff />
+
+                      <div className="w-[1px] h-8 bg-white/10 mx-1" />
+                      
+                      <button 
+                        onClick={handleDisconnectVoice} 
+                        className="p-3.5 rounded-xl bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/20 transition-colors"
+                        title="Disconnect"
+                      >
+                           <PhoneOff size={20} />
                       </button>
                   </div>
-                  
-                  <button 
-                     onClick={() => toggleCamera()} // Quick way to collapse video if user wants
-                     className="absolute top-4 right-4 bg-black/50 text-white px-3 py-1 rounded hover:bg-black/70 z-10"
-                  >
-                      Свернуть видео
-                  </button>
               </div>
           ) : (
-             <>
-                <ChatArea 
-                    channel={activeChannel}
-                    messages={currentMessages}
-                    users={usersRecord}
-                    currentUser={currentUser}
-                    onSendMessage={handleSendMessage}
-                    onEditMessage={handleEditMessage}
-                    onDeleteMessage={handleDeleteMessage}
-                    onAddReaction={handleAddReaction}
-                    onStartCall={(video) => handleStartCall(video)}
-                />
-                
-                {/* Mini Floating Voice Overlay (Audio Only or Collapsed) */}
-                {voiceState.connected && (
-                    <div className="absolute top-4 right-4 w-64 bg-black/90 backdrop-blur-xl rounded-xl border border-green-500/30 p-3 shadow-2xl animate-fade-in z-50">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-green-400 text-xs font-bold uppercase tracking-wider">В голосовом канале</span>
-                            <div className="flex gap-1">
-                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                            </div>
-                        </div>
-                        <div className="text-white font-bold truncate mb-3">
-                            {activeChannel.type === ChannelType.DM ? activeChannel.name : activeChannel.name}
-                        </div>
-                        
-                        <div className="flex justify-center gap-3">
-                            <button className={`p-2.5 rounded-full bg-gray-800 hover:bg-gray-700 transition-colors ${voiceState.muted ? 'text-red-500 bg-white/10' : ''}`} onClick={() => setVoiceState(p => ({...p, muted: !p.muted}))}>
-                                {voiceState.muted ? <MicOff size={18} /> : <Mic size={18} />}
-                            </button>
-                            <button onClick={toggleCamera} className={`p-2.5 rounded-full bg-gray-800 hover:bg-gray-700 transition-colors ${voiceState.cameraOn ? 'text-green-400' : ''}`}>
-                                <Video size={18} />
-                            </button>
-                            <button onClick={toggleScreenShare} className={`p-2.5 rounded-full bg-gray-800 hover:bg-gray-700 transition-colors ${voiceState.screenShareOn ? 'text-blurple-400' : ''}`}>
-                                <Monitor size={18} />
-                            </button>
-                            <button onClick={handleDisconnectVoice} className="p-2.5 rounded-full bg-red-500 hover:bg-red-600 transition-colors text-white">
-                                <PhoneOff size={18} />
-                            </button>
-                        </div>
-                    </div>
-                )}
-             </>
+             <ChatArea 
+                channel={activeChannel}
+                messages={currentMessages}
+                users={usersRecord}
+                currentUser={currentUser}
+                onSendMessage={handleSendMessage}
+                onEditMessage={handleEditMessage}
+                onDeleteMessage={handleDeleteMessage}
+                onAddReaction={handleAddReaction}
+                onStartCall={(video) => handleStartCall(video)}
+            />
           )}
         </div>
 
@@ -672,5 +738,15 @@ const App: React.FC = () => {
     </div>
   );
 };
+
+// Simple Icon Component for Minimize to avoid cluttering imports
+const MinimizeUI = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+        <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+        <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+        <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+    </svg>
+);
 
 export default App;
