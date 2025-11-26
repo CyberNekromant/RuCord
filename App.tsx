@@ -130,7 +130,18 @@ const App: React.FC = () => {
   // --- P2P Logic Initialization ---
   useEffect(() => {
     if (isAuthenticated && !peerRef.current) {
-       const peer = new Peer();
+       // Config for better connectivity across NATs
+       const peer = new Peer({
+           host: '0.peerjs.com',
+           port: 443,
+           secure: true,
+           config: {
+               iceServers: [
+                   { urls: 'stun:stun.l.google.com:19302' },
+                   { urls: 'stun:global.stun.twilio.com:3478' }
+               ]
+           }
+       });
        
        peer.on('open', (id) => {
            console.log('My Peer ID:', id);
@@ -145,6 +156,14 @@ const App: React.FC = () => {
        peer.on('call', (call) => {
            console.log('Incoming call from:', call.peer);
            handleIncomingCall(call);
+       });
+
+       peer.on('error', (err) => {
+           console.error('PeerJS Error:', err);
+           if (err.type === 'peer-unavailable') {
+               alert('Не удалось найти пользователя с таким ID. Возможно, он оффлайн.');
+               setConnectionStatus(ConnectionState.DISCONNECTED);
+           }
        });
 
        peerRef.current = peer;

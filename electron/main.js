@@ -1,13 +1,11 @@
 import { app, BrowserWindow, shell } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 
+// Создаем require для работы в ES-модулях
+const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// Handle creating/removing shortcuts on Windows when installing/uninstalling.
-if (require('electron-squirrel-startup')) {
-  app.quit();
-}
 
 let mainWindow;
 
@@ -19,13 +17,19 @@ function createWindow() {
     minWidth: 940,
     minHeight: 500,
     backgroundColor: '#0f1014', // Match the app background to prevent white flash
-    titleBarStyle: 'default', 
-    autoHideMenuBar: true, // Hide the standard menu bar (File, Edit, etc) like Discord
-    icon: path.join(__dirname, '../public/icon.png'), // Ensure you have an icon
+    titleBarStyle: 'hidden', // Скрываем нативный заголовок, но оставляем кнопки управления (на Win/Mac)
+    titleBarOverlay: {
+      color: '#0f1014',
+      symbolColor: '#ffffff',
+      height: 30
+    },
+    // autoHideMenuBar: true, // Это для win/linux, titleBarStyle hidden лучше для кастомного UI
+    icon: path.join(__dirname, '../public/icon.png'), 
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
       devTools: true,
+      webSecurity: false // Иногда нужно для P2P в локальной разработке, но лучше включить в проде
     },
   });
 
@@ -34,8 +38,8 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
-    // Open the DevTools.
-    // mainWindow.webContents.openDevTools();
+    // Open the DevTools only in dev mode
+    mainWindow.webContents.openDevTools();
   } else {
     // In production, load the built index.html
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
@@ -43,8 +47,11 @@ function createWindow() {
 
   // Open external links in the default browser, not inside the app
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: 'deny' };
+    if (url.startsWith('http')) {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
   });
 }
 
@@ -68,14 +75,14 @@ app.on('window-all-closed', () => {
 // Permissions handler for Camera/Microphone
 app.on('web-contents-created', (event, contents) => {
   contents.session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
-    if (permission === 'media') {
+    if (permission === 'media' || permission === 'display-capture') {
       return true;
     }
     return true;
   });
   
   contents.session.setPermissionRequestHandler((webContents, permission, callback) => {
-    if (permission === 'media') {
+    if (permission === 'media' || permission === 'display-capture') {
       callback(true);
       return;
     }
