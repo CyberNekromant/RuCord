@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Mic, Video, Volume2, LogOut, User as UserIcon, Play, Camera, Save, Palette } from 'lucide-react';
+import { X, Mic, Video, Volume2, LogOut, User as UserIcon, Play, Camera, Save, Palette, Download, Upload, Database } from 'lucide-react';
 import { User } from '../types';
 import { soundService } from '../services/soundService';
 
@@ -46,6 +46,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
 
   // Reset draft when modal opens
   useEffect(() => {
@@ -103,6 +104,50 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           avatarUrl: previewAvatar || currentUser.avatarUrl
       });
       setHasChanges(false);
+  };
+
+  const handleBackup = () => {
+      const data = {
+          rucord_users: localStorage.getItem('rucord_users'),
+          rucord_messages: localStorage.getItem('rucord_messages'),
+          rucord_dms: localStorage.getItem('rucord_dms'),
+          rucord_current_user_id: localStorage.getItem('rucord_current_user_id'),
+          exportDate: new Date().toISOString()
+      };
+
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rucord_backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+  };
+
+  const handleRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+          try {
+              const data = JSON.parse(event.target?.result as string);
+              
+              if (data.rucord_users) localStorage.setItem('rucord_users', data.rucord_users);
+              if (data.rucord_messages) localStorage.setItem('rucord_messages', data.rucord_messages);
+              if (data.rucord_dms) localStorage.setItem('rucord_dms', data.rucord_dms);
+              if (data.rucord_current_user_id) localStorage.setItem('rucord_current_user_id', data.rucord_current_user_id);
+              
+              alert('Данные успешно восстановлены! Страница будет перезагружена.');
+              window.location.reload();
+          } catch (err) {
+              alert('Ошибка при чтении файла резервной копии. Убедитесь, что это правильный JSON файл RuCord.');
+              console.error(err);
+          }
+      };
+      reader.readAsText(file);
   };
 
   if (!isOpen) return null;
@@ -233,7 +278,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="h-full flex flex-col">
                 <h2 className="text-xl font-bold text-white mb-2">Профиль пользователя</h2>
                 
-                <div className="flex flex-col lg:flex-row gap-8 h-full overflow-y-auto pb-20">
+                <div className="flex flex-col lg:flex-row gap-8 h-full overflow-y-auto pb-20 custom-scrollbar">
                     {/* EDITOR COLUMN */}
                     <div className="flex-1 space-y-6">
                          {/* Banner Color Picker */}
@@ -308,6 +353,39 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 </div>
                              </div>
                          </div>
+
+                         <div className="w-full h-[1px] bg-gray-800 my-4" />
+                         
+                         {/* DATA & PRIVACY SECTION */}
+                         <div className="bg-gray-900/50 p-5 rounded-lg border border-gray-800">
+                             <h3 className="flex items-center gap-2 text-sm font-bold text-gray-300 uppercase mb-4">
+                                <Database size={16} className="text-blurple-400" />
+                                Данные и Хранилище
+                             </h3>
+                             <p className="text-xs text-gray-400 mb-4">
+                                 Так как RuCord работает без центрального сервера, вся ваша переписка и друзья хранятся в этом браузере. Сделайте резервную копию, чтобы не потерять данные.
+                             </p>
+                             <div className="flex gap-3">
+                                 <button 
+                                    onClick={handleBackup}
+                                    className="flex-1 bg-gray-800 hover:bg-gray-700 text-white py-2 px-4 rounded flex items-center justify-center gap-2 transition-colors border border-gray-700"
+                                 >
+                                     <Download size={16} />
+                                     Скачать Backup
+                                 </button>
+                                 <div className="flex-1 relative">
+                                    <button 
+                                        onClick={() => restoreInputRef.current?.click()}
+                                        className="w-full bg-gray-800 hover:bg-gray-700 text-white py-2 px-4 rounded flex items-center justify-center gap-2 transition-colors border border-gray-700"
+                                    >
+                                        <Upload size={16} />
+                                        Восстановить
+                                    </button>
+                                    <input ref={restoreInputRef} type="file" accept=".json" hidden onChange={handleRestore} />
+                                 </div>
+                             </div>
+                         </div>
+
                     </div>
 
                     {/* PREVIEW COLUMN */}

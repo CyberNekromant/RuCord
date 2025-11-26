@@ -6,8 +6,14 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
     plugins: [react()],
+    // Важно для Electron: используем относительные пути
+    base: './',
     define: {
       'process.env.API_KEY': JSON.stringify(env.API_KEY),
     },
+    server: {
+      port: 5173,
+      strictPort: true,
+    }
   };
 });

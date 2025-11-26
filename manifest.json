@@ -1,0 +1,21 @@
+{
+  "name": "RuCord",
+  "short_name": "RuCord",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1014",
+  "theme_color": "#0f1014",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f431.png",
+      "sizes": "72x72",
+      "type": "image/png"
+    },
+    {
+      "src": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/svg/1f431.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
