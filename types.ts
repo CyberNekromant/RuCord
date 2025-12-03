@@ -71,6 +71,8 @@ export interface AppState {
     localCameraStream?: MediaStream; // Microphone + Camera
     localScreenStream?: MediaStream; // Screen Share + System Audio
     remoteStreams: Record<string, MediaStream>; // Multiple incoming P2P Streams
+    // Track remote peers status (id -> {muted, cameraOn})
+    peerStatus: Record<string, { muted: boolean; cameraOn: boolean }>;
   };
   p2p: {
       myPeerId: string | null;

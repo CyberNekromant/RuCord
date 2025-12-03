@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import ServerList from './components/ServerList';
 import ChannelList from './components/ChannelList';
@@ -7,9 +6,12 @@ import UserList from './components/UserList';
 import AuthScreen from './components/AuthScreen';
 import SettingsModal from './components/SettingsModal';
 import ConnectionManager from './components/ConnectionManager';
+import IncomingCallModal from './components/IncomingCallModal';
+import MiniPlayer from './components/MiniPlayer';
+import DeleteChatModal from './components/DeleteChatModal';
 import { INITIAL_SERVERS, INITIAL_MESSAGES, MOCK_USERS, CURRENT_USER, GEMINI_BOT, INITIAL_DMS } from './constants';
 import { ChannelType, Message, User, Channel, ConnectionState } from './types';
-import { Mic, Video, Monitor, PhoneOff, MicOff, VideoOff, ScreenShare, LayoutGrid, Maximize2, Wifi, Signal } from 'lucide-react';
+import { Mic, Video, PhoneOff, MicOff, VideoOff, ScreenShare, Wifi, Signal, Minimize2 } from 'lucide-react';
 import { soundService } from './services/soundService';
 import { Peer, DataConnection, MediaConnection } from 'peerjs';
 
@@ -30,6 +32,13 @@ const App: React.FC = () => {
   const [myPeerId, setMyPeerId] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionState>(ConnectionState.DISCONNECTED);
   
+  // Incoming Call State
+  const [incomingCall, setIncomingCall] = useState<MediaConnection | null>(null);
+  const [isCallMinimized, setIsCallMinimized] = useState(false);
+  
+  // Delete Chat State
+  const [chatToDelete, setChatToDelete] = useState<string | null>(null);
+
   // Multi-peer references
   const peerRef = useRef<Peer | null>(null);
   const connectionsRef = useRef<Map<string, DataConnection>>(new Map());
@@ -39,7 +48,6 @@ const App: React.FC = () => {
   const [p2pUsers, setP2pUsers] = useState<Record<string, User>>({});
 
   // Fix for "Call answered with old/undefined stream"
-  // We use a ref to always get the current local stream inside callbacks/effects
   const localStreamRef = useRef<MediaStream | undefined>(undefined);
 
   // --- Persistence Helpers ---
@@ -89,12 +97,15 @@ const App: React.FC = () => {
     localCameraStream: undefined as MediaStream | undefined,
     localScreenStream: undefined as MediaStream | undefined,
     remoteStreams: {} as Record<string, MediaStream>, // Map peerId -> Stream
+    peerStatus: {} as Record<string, { muted: boolean; cameraOn: boolean }>,
   });
 
   // Keep ref synced with state
   useEffect(() => {
-    localStreamRef.current = voiceState.localCameraStream;
-  }, [voiceState.localCameraStream]);
+    localStreamRef.current = voiceState.screenShareOn 
+      ? voiceState.localScreenStream 
+      : voiceState.localCameraStream;
+  }, [voiceState.localCameraStream, voiceState.localScreenStream, voiceState.screenShareOn]);
   
   // Refs for media
   const cameraVideoRef = useRef<HTMLVideoElement>(null);
@@ -120,18 +131,53 @@ const App: React.FC = () => {
     soundService.setVolume(volume);
   }, [volume]);
 
+  // --- HARDWARE MUTE LOGIC ---
+  // Actually disable the audio track when muted
+  useEffect(() => {
+    if (voiceState.localCameraStream) {
+        voiceState.localCameraStream.getAudioTracks().forEach(track => {
+            track.enabled = !voiceState.muted;
+        });
+    }
+    // Also handle screen share audio if we merged it
+    if (voiceState.localScreenStream) {
+        voiceState.localScreenStream.getAudioTracks().forEach(track => {
+            track.enabled = !voiceState.muted;
+        });
+    }
+  }, [voiceState.muted, voiceState.localCameraStream, voiceState.localScreenStream]);
+
   // --- Helper for Deterministic DM IDs ---
   const getP2PDMId = (userId1: string, userId2: string) => {
-      // Sort IDs to ensure (A, B) and (B, A) generate the same Channel ID
       const [a, b] = [userId1, userId2].sort();
       return `dm_${a}_${b}`;
+  };
+
+  // --- BROADCAST STATUS ---
+  // Tell other peers about my mute/cam status
+  const broadcastCallStatus = (muted: boolean, cameraOn: boolean) => {
+      connectionsRef.current.forEach(conn => {
+          if (conn.open) {
+              conn.send({ 
+                  type: 'status_update', 
+                  status: { muted, cameraOn } 
+              });
+          }
+      });
   };
 
   // --- P2P Logic Initialization ---
   useEffect(() => {
     if (isAuthenticated && !peerRef.current) {
-       // Config for better connectivity across NATs
-       const peer = new Peer({
+       let persistentId = localStorage.getItem('rucord_permanent_peer_id');
+       if (!persistentId) {
+           persistentId = 'user_' + Math.random().toString(36).substr(2, 9);
+           localStorage.setItem('rucord_permanent_peer_id', persistentId);
+       }
+
+       console.log("Initializing PeerJS with ID:", persistentId);
+
+       const peer = new Peer(persistentId, {
            host: '0.peerjs.com',
            port: 443,
            secure: true,
@@ -155,13 +201,12 @@ const App: React.FC = () => {
 
        peer.on('call', (call) => {
            console.log('Incoming call from:', call.peer);
-           handleIncomingCall(call);
+           handleIncomingCallRequest(call); 
        });
 
        peer.on('error', (err) => {
            console.error('PeerJS Error:', err);
            if (err.type === 'peer-unavailable') {
-               alert('Не удалось найти пользователя с таким ID. Возможно, он оффлайн.');
                setConnectionStatus(ConnectionState.DISCONNECTED);
            }
        });
@@ -172,7 +217,7 @@ const App: React.FC = () => {
 
   const handleConnectPeer = (peerId: string) => {
       if (!peerRef.current) return;
-      if (connectionsRef.current.has(peerId)) return; // Already connected
+      if (connectionsRef.current.has(peerId)) return;
 
       setConnectionStatus(ConnectionState.CONNECTING);
       const conn = peerRef.current.connect(peerId);
@@ -185,10 +230,15 @@ const App: React.FC = () => {
           setConnectedPeers(prev => [...prev, conn.peer]);
           setConnectionStatus(ConnectionState.CONNECTED);
           
-          // Send handshake: Tell them who I am
+          // Send handshake
           conn.send({ type: 'handshake', user: currentUser });
+          // Send current call status
+          conn.send({ 
+              type: 'status_update', 
+              status: { muted: voiceState.muted, cameraOn: voiceState.cameraOn } 
+          });
 
-          // If we are already in a call, try to call this new peer immediately
+          // Mesh logic - if new person joins existing group
           if (voiceState.connected && localStreamRef.current) {
              callPeer(conn.peer, localStreamRef.current);
           }
@@ -198,11 +248,18 @@ const App: React.FC = () => {
           if (data.type === 'message') {
               receiveP2PMessage(data.message, conn.peer);
           } else if (data.type === 'handshake') {
-              console.log('Handshake received from:', conn.peer, data.user);
-              // Store P2P user profile
               setP2pUsers(prev => ({
                   ...prev,
                   [conn.peer]: { ...data.user, id: data.user.id }
+              }));
+          } else if (data.type === 'status_update') {
+              // Update remote peer status UI
+              setVoiceState(prev => ({
+                  ...prev,
+                  peerStatus: {
+                      ...prev.peerStatus,
+                      [conn.peer]: data.status
+                  }
               }));
           }
       });
@@ -211,29 +268,23 @@ const App: React.FC = () => {
           connectionsRef.current.delete(conn.peer);
           setConnectedPeers(prev => prev.filter(p => p !== conn.peer));
           
-          // Cleanup User
           setP2pUsers(prev => {
               const next = { ...prev };
               delete next[conn.peer];
               return next;
           });
 
-          // Remove stream if exists
           setVoiceState(prev => {
               const newStreams = { ...prev.remoteStreams };
               delete newStreams[conn.peer];
-              return { ...prev, remoteStreams: newStreams };
+              const newStatus = { ...prev.peerStatus };
+              delete newStatus[conn.peer];
+              return { ...prev, remoteStreams: newStreams, peerStatus: newStatus };
           });
 
           if (connectionsRef.current.size === 0) {
               setConnectionStatus(ConnectionState.DISCONNECTED);
           }
-      });
-      
-      conn.on('error', (err) => {
-          console.error('Connection Error:', err);
-          connectionsRef.current.delete(conn.peer);
-          setConnectedPeers(prev => prev.filter(p => p !== conn.peer));
       });
   };
 
@@ -245,48 +296,127 @@ const App: React.FC = () => {
       });
   };
 
-  const handleIncomingCall = (call: MediaConnection) => {
-      callsRef.current.set(call.peer, call);
+  // --- REFACTORED INCOMING CALL LOGIC ---
+  const handleIncomingCallRequest = (call: MediaConnection) => {
+      // Logic: If we are already connected to this peer via MediaConnection, 
+      // this is likely a stream renegotiation (camera toggle).
+      const existingCall = callsRef.current.get(call.peer);
       
-      // CRITICAL FIX: Use ref to get the LATEST stream, not the one from closure capture
-      const streamToAnswer = localStreamRef.current;
-      
-      console.log("Answering call from", call.peer, "with stream", streamToAnswer?.id);
-      
-      call.answer(streamToAnswer);
-      
-      // If we answered (even without stream), we are technically "connected" in P2P sense
-      // But visually we only show "Call" UI if user initiated or clicked join.
-      // Auto-join UI logic:
-      if (!voiceState.connected) {
-          setVoiceState(prev => ({
-             ...prev,
-             connected: true,
-             channelId: activeChannelId, // Just attach to current view
-          }));
+      // Also check if we are in a call generally to avoid "stale" state issues
+      if (existingCall && existingCall.open) {
+          console.log("Auto-answering renegotiation from", call.peer);
+          
+          // Answer with current local stream
+          call.answer(localStreamRef.current);
+          
+          // Replace the old call reference
+          callsRef.current.set(call.peer, call);
+          
+          call.on('stream', (remoteStream) => {
+              setVoiceState(prev => ({
+                  ...prev,
+                  remoteStreams: { ...prev.remoteStreams, [call.peer]: remoteStream }
+              }));
+          });
+          return;
       }
 
-      call.on('stream', (remoteStream) => {
-          console.log("Received remote stream from", call.peer);
+      // New call request - Show UI
+      setIncomingCall(call);
+      soundService.playRingtone();
+  };
+
+  const acceptCall = async (withVideo: boolean) => {
+      if (!incomingCall) return;
+      soundService.stopAll();
+
+      try {
+          const constraints: MediaStreamConstraints = {
+             audio: selectedMicId ? { deviceId: { exact: selectedMicId } } : true,
+             video: withVideo ? (selectedCamId ? { deviceId: { exact: selectedCamId } } : true) : false
+          };
+          
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          
+          // Generate Deterministic DM ID for this peer
+          const dmId = getP2PDMId(currentUser.id, incomingCall.peer);
+          const caller = p2pUsers[incomingCall.peer] || { username: 'Unknown User', id: incomingCall.peer };
+
+          // Ensure DM Channel exists so we can switch to it
+          setDms(prev => {
+              if (prev.find(d => d.id === dmId)) return prev;
+              const newDM: Channel = {
+                  id: dmId,
+                  serverId: 'home',
+                  name: caller.username,
+                  type: ChannelType.DM,
+                  dmUserId: incomingCall.peer
+              };
+              return [newDM, ...prev];
+          });
+
+          // Switch View to the Call Channel
+          setActiveServerId('home');
+          setActiveChannelId(dmId);
+
           setVoiceState(prev => ({
               ...prev,
-              remoteStreams: { ...prev.remoteStreams, [call.peer]: remoteStream }
+              connected: true,
+              channelId: dmId,
+              muted: false,
+              deafened: false,
+              cameraOn: withVideo,
+              screenShareOn: false,
+              localCameraStream: stream,
+              remoteStreams: {}
           }));
-      });
-      
-      call.on('close', () => {
-           setVoiceState(prev => {
-              const newStreams = { ...prev.remoteStreams };
-              delete newStreams[call.peer];
-              return { ...prev, remoteStreams: newStreams };
+
+          setIsCallMinimized(false);
+
+          incomingCall.answer(stream);
+          callsRef.current.set(incomingCall.peer, incomingCall);
+
+          incomingCall.on('stream', (remoteStream) => {
+              setVoiceState(prev => ({
+                  ...prev,
+                  remoteStreams: { ...prev.remoteStreams, [incomingCall.peer]: remoteStream }
+              }));
           });
-          callsRef.current.delete(call.peer);
-      });
+          
+          incomingCall.on('close', () => {
+              setVoiceState(prev => {
+                  const newStreams = { ...prev.remoteStreams };
+                  delete newStreams[incomingCall.peer];
+                  return { ...prev, remoteStreams: newStreams };
+              });
+              callsRef.current.delete(incomingCall.peer);
+              if (callsRef.current.size === 0) {
+                  handleDisconnectVoice();
+              }
+          });
+
+          // Broadcast initial status
+          broadcastCallStatus(false, withVideo);
+
+      } catch (e) {
+          console.error("Error accepting call", e);
+          declineCall();
+      }
+
+      setIncomingCall(null);
+  };
+
+  const declineCall = () => {
+      soundService.stopAll();
+      if (incomingCall) {
+          incomingCall.close();
+      }
+      setIncomingCall(null);
   };
   
   const callPeer = (peerId: string, stream: MediaStream) => {
       if (!peerRef.current) return;
-      console.log("Calling peer", peerId, "with stream", stream.id);
+      
       const call = peerRef.current.call(peerId, stream);
       callsRef.current.set(peerId, call);
       
@@ -296,19 +426,24 @@ const App: React.FC = () => {
               remoteStreams: { ...prev.remoteStreams, [peerId]: remoteStream }
           }));
       });
+
+      call.on('close', () => {
+           setVoiceState(prev => {
+              const newStreams = { ...prev.remoteStreams };
+              delete newStreams[peerId];
+              return { ...prev, remoteStreams: newStreams };
+          });
+          callsRef.current.delete(peerId);
+      });
   };
 
   const receiveP2PMessage = (msg: Message, senderPeerId: string) => {
       soundService.play('message');
       
-      // Auto-Create DM Logic:
-      // If the message is for a DM channel that doesn't exist in my list yet
       setDms(prevDms => {
           const exists = prevDms.find(d => d.id === msg.channelId);
           if (exists) return prevDms;
 
-          // It's a new DM from someone!
-          // Try to find the user info
           const senderUser = p2pUsers[senderPeerId] || { id: msg.userId, username: 'Unknown User', avatarUrl: '', status: 'online' };
           
           const newDM: Channel = {
@@ -331,17 +466,13 @@ const App: React.FC = () => {
       const targetUser = p2pUsers[peerId];
       if (!targetUser) return; 
 
-      // Use DETERMINISTIC ID
       const dmId = getP2PDMId(currentUser.id, targetUser.id);
-      
-      // Check if DM exists
       const existingDM = dms.find(d => d.id === dmId);
       
       if (existingDM) {
           setActiveServerId('home');
           setActiveChannelId(existingDM.id);
       } else {
-          // Create new DM with correct ID
           const newDM: Channel = {
               id: dmId,
               serverId: 'home',
@@ -350,10 +481,8 @@ const App: React.FC = () => {
               dmUserId: targetUser.id
           };
           setDms(prev => [newDM, ...prev]);
-          setMessages(prev => ({ ...prev, [newDM.id]: [] }));
-          
-          setActiveServerId('home');
           setActiveChannelId(newDM.id);
+          setMessages(prev => ({ ...prev, [newDM.id]: [] }));
       }
       setIsConnectionManagerOpen(false);
   };
@@ -361,7 +490,6 @@ const App: React.FC = () => {
 
   // --- Auth Logic ---
   useEffect(() => {
-    // Check for persisted session
     const savedUserId = localStorage.getItem('rucord_current_user_id');
     if (savedUserId) {
         const users = JSON.parse(localStorage.getItem('rucord_users') || '[]');
@@ -374,38 +502,30 @@ const App: React.FC = () => {
   }, []);
 
   // --- Persistence Effects ---
-  // Save messages whenever they change
   useEffect(() => {
     localStorage.setItem('rucord_messages', JSON.stringify(messages));
   }, [messages]);
 
-  // Save DMs whenever they change
   useEffect(() => {
     localStorage.setItem('rucord_dms', JSON.stringify(dms));
   }, [dms]);
 
   // --- Sound Effects Logic ---
-  // Track previous voice state to play sounds on change
   const prevVoiceState = useRef(voiceState);
 
   useEffect(() => {
-    // Connected
     if (voiceState.connected && !prevVoiceState.current.connected) {
         soundService.play('join');
     }
-    // Disconnected
     if (!voiceState.connected && prevVoiceState.current.connected) {
         soundService.play('leave');
     }
-    // Mute Toggle
     if (voiceState.muted !== prevVoiceState.current.muted) {
         soundService.play(voiceState.muted ? 'mute' : 'unmute');
     }
-    // Deafen Toggle
     if (voiceState.deafened !== prevVoiceState.current.deafened) {
         soundService.play(voiceState.deafened ? 'deafen' : 'undeafen');
     }
-
     prevVoiceState.current = voiceState;
   }, [voiceState]);
 
@@ -421,7 +541,7 @@ const App: React.FC = () => {
           username: username,
           avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`,
           status: 'online',
-          password: password // In a real app, NEVER store passwords like this.
+          password: password 
       };
 
       users.push(newUser);
@@ -457,19 +577,15 @@ const App: React.FC = () => {
       const updatedUser = { ...currentUser, ...updates };
       setCurrentUser(updatedUser);
 
-      // Update in local storage users list
       const users = JSON.parse(localStorage.getItem('rucord_users') || '[]');
       const updatedUsers = users.map((u: User) => u.id === currentUser.id ? updatedUser : u);
       localStorage.setItem('rucord_users', JSON.stringify(updatedUsers));
       
-      // Resend handshake to update peers?
       connectionsRef.current.forEach(conn => {
           conn.send({ type: 'handshake', user: updatedUser });
       });
   };
 
-
-  // Derived state
   const activeServer = useMemo(() => 
     INITIAL_SERVERS.find(s => s.id === activeServerId), 
   [activeServerId]);
@@ -486,11 +602,7 @@ const App: React.FC = () => {
   const allUsers = useMemo(() => {
      const storedUsers = JSON.parse(localStorage.getItem('rucord_users') || '[]');
      const otherStoredUsers = storedUsers.filter((u: User) => u.id !== currentUser.id);
-     
-     // Merge known P2P users into the general user pool so they appear in chats
      const p2pUserList = Object.values(p2pUsers);
-
-     // Deduplicate by ID
      const combined = [
          currentUser, 
          GEMINI_BOT, 
@@ -498,8 +610,6 @@ const App: React.FC = () => {
          ...otherStoredUsers,
          ...p2pUserList
      ];
-     
-     // Unique filter
      const unique = new Map();
      combined.forEach(u => unique.set(u.id, u));
      return Array.from(unique.values());
@@ -512,14 +622,10 @@ const App: React.FC = () => {
   }, [allUsers]);
 
 
-  // Handlers
   const handleServerSelect = (id: string) => {
     setActiveServerId(id);
     if (id === 'home') {
-        // Default DM
-        if (dms.length > 0) {
-            setActiveChannelId(dms[0].id);
-        }
+        if (dms.length > 0) setActiveChannelId(dms[0].id);
     } else {
         const server = INITIAL_SERVERS.find(s => s.id === id);
         if (server) {
@@ -533,14 +639,12 @@ const App: React.FC = () => {
     if (type === ChannelType.TEXT || type === ChannelType.DM) {
       setActiveChannelId(id);
     } else {
-      // Voice Channel Logic
-      if (activeChannelId !== id) {
-          setActiveChannelId(id);
-      }
+      if (activeChannelId !== id) setActiveChannelId(id);
       
-      // If we are not connected OR we are connected to a different channel
       if (!voiceState.connected || voiceState.channelId !== id) {
         handleStartCall(false, id);
+      } else {
+          setIsCallMinimized(false);
       }
     }
   };
@@ -550,13 +654,10 @@ const App: React.FC = () => {
       if (existingDM) {
           setActiveChannelId(existingDM.id);
       } else {
-          // New Local Mock DM (not P2P specific logic, for generic users)
           const targetUser = usersRecord[userId];
           if (!targetUser) return;
           
-          // Use Deterministic ID if possible, assuming I know target ID
           const dmId = getP2PDMId(currentUser.id, userId);
-
           const newDM: Channel = {
               id: dmId,
               serverId: 'home',
@@ -568,6 +669,31 @@ const App: React.FC = () => {
           setActiveChannelId(newDM.id);
           setMessages(prev => ({ ...prev, [newDM.id]: [] }));
       }
+  };
+
+  const confirmDeleteChat = () => {
+    if (!chatToDelete) return;
+
+    // Remove from DMs
+    const newDms = dms.filter(d => d.id !== chatToDelete);
+    setDms(newDms);
+
+    // Remove Messages
+    const newMessages = { ...messages };
+    delete newMessages[chatToDelete];
+    setMessages(newMessages);
+
+    // If active channel was deleted, switch to another
+    if (activeChannelId === chatToDelete) {
+      if (newDms.length > 0) {
+        setActiveChannelId(newDms[0].id);
+      } else {
+        // Fallback if no DMs left
+        setActiveChannelId(''); 
+      }
+    }
+
+    setChatToDelete(null);
   };
 
   const handleSendMessage = (text: string, replyToId?: string, attachments?: { type: 'image' | 'file', url: string, name: string }[]) => {
@@ -592,7 +718,6 @@ const App: React.FC = () => {
       [activeChannel.id]: [...(prev[activeChannel.id] || []), newMessage]
     }));
 
-    // Broadcast P2P to ALL connected peers
     broadcastMessage(newMessage);
   };
 
@@ -639,7 +764,6 @@ const App: React.FC = () => {
     });
   };
 
-  // --- Media Handling ---
   const stopStreamTracks = (stream?: MediaStream) => {
       if (stream) {
           stream.getTracks().forEach(track => {
@@ -648,7 +772,6 @@ const App: React.FC = () => {
       }
   };
 
-  // Cleanup on unmount
   useEffect(() => {
       return () => {
           stopStreamTracks(voiceState.localCameraStream);
@@ -657,7 +780,6 @@ const App: React.FC = () => {
       };
   }, []);
 
-  // Update video elements
   useEffect(() => {
       if (cameraVideoRef.current) {
           cameraVideoRef.current.srcObject = voiceState.localCameraStream || null;
@@ -676,22 +798,19 @@ const App: React.FC = () => {
   const handleStartCall = async (withVideo: boolean, targetChannelId?: string) => {
       const channelToJoin = targetChannelId || activeChannel.id;
       
-      // Case 1: Already connected to this channel - just toggle video
       if (voiceState.connected && voiceState.channelId === channelToJoin) {
           if (withVideo && !voiceState.cameraOn) toggleCamera();
+          setIsCallMinimized(false);
           return;
       }
 
-      // Case 2: Connected to ANOTHER channel - disconnect first completely
       if (voiceState.connected) {
-          handleDisconnectVoice(); // This cleans up state and streams
+          handleDisconnectVoice();
           stopStreamTracks(voiceState.localCameraStream);
           stopStreamTracks(voiceState.localScreenStream);
           callsRef.current.forEach(call => call.close());
           callsRef.current.clear();
       }
-
-      // --- Start New Call Logic ---
 
       try {
           const constraints: MediaStreamConstraints = {
@@ -701,7 +820,8 @@ const App: React.FC = () => {
 
           const stream = await navigator.mediaDevices.getUserMedia(constraints);
           
-          setVoiceState({
+          setVoiceState(prev => ({
+              ...prev,
               connected: true,
               channelId: channelToJoin,
               muted: false,
@@ -710,10 +830,13 @@ const App: React.FC = () => {
               screenShareOn: false,
               localCameraStream: stream,
               localScreenStream: undefined,
-              remoteStreams: {}
-          });
+              remoteStreams: {},
+              peerStatus: {}
+          }));
+          
+          setIsCallMinimized(false);
+          broadcastCallStatus(false, withVideo);
 
-          // Call ALL connected peers with the new stream
           connectionsRef.current.forEach((conn, peerId) => {
                callPeer(peerId, stream);
           });
@@ -727,6 +850,8 @@ const App: React.FC = () => {
   };
 
   const toggleCamera = async () => {
+      const newCamState = !voiceState.cameraOn;
+      
       if (voiceState.cameraOn) {
           stopStreamTracks(voiceState.localCameraStream);
            try {
@@ -735,9 +860,15 @@ const App: React.FC = () => {
                 video: false
             };
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            
+            // Re-apply mute logic to new stream
+            stream.getAudioTracks().forEach(t => t.enabled = !voiceState.muted);
+
             setVoiceState(prev => ({ ...prev, cameraOn: false, localCameraStream: stream }));
             
+            // Renegotiate streams
             Object.keys(voiceState.remoteStreams).forEach(peerId => callPeer(peerId, stream));
+            broadcastCallStatus(voiceState.muted, false);
 
           } catch (e) { console.error(e); }
       } else {
@@ -748,31 +879,86 @@ const App: React.FC = () => {
             };
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
             stopStreamTracks(voiceState.localCameraStream);
+            
+             // Re-apply mute logic
+            stream.getAudioTracks().forEach(t => t.enabled = !voiceState.muted);
+
             setVoiceState(prev => ({ ...prev, cameraOn: true, localCameraStream: stream }));
             
              Object.keys(voiceState.remoteStreams).forEach(peerId => callPeer(peerId, stream));
+             broadcastCallStatus(voiceState.muted, true);
           } catch (e) { console.error(e); }
       }
+  };
+  
+  const handleToggleMute = () => {
+      const newMuted = !voiceState.muted;
+      setVoiceState(p => ({...p, muted: newMuted}));
+      broadcastCallStatus(newMuted, voiceState.cameraOn);
+  };
+  
+  const handleToggleDeafen = () => {
+      const newDeafened = !voiceState.deafened;
+      // If deafening, also mute mic
+      const newMuted = newDeafened ? true : voiceState.muted;
+      
+      setVoiceState(p => ({...p, deafened: newDeafened, muted: newMuted}));
+      broadcastCallStatus(newMuted, voiceState.cameraOn);
   };
 
   const toggleScreenShare = async () => {
       if (voiceState.screenShareOn) {
           stopStreamTracks(voiceState.localScreenStream);
           setVoiceState(prev => ({ ...prev, screenShareOn: false, localScreenStream: undefined }));
+          
+          // Revert back to camera stream if available
+          if (voiceState.cameraOn && voiceState.localCameraStream) {
+              connectionsRef.current.forEach((conn, peerId) => {
+                  callPeer(peerId, voiceState.localCameraStream!);
+              });
+          }
       } else {
           try {
-              const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+              // 1. Get Screen Video ONLY (Audio false prevents windows electron crash)
+              const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+              
+              // 2. Get Microphone Audio Separately
+              const micStream = await navigator.mediaDevices.getUserMedia({
+                   audio: selectedMicId ? { deviceId: { exact: selectedMicId } } : true
+              });
+
+              // 3. Combine them into one stream
+              const combinedStream = new MediaStream([
+                  ...displayStream.getVideoTracks(),
+                  ...micStream.getAudioTracks()
+              ]);
+              
+              // Handle stopping via browser UI
               displayStream.getVideoTracks()[0].onended = () => {
                    setVoiceState(prev => ({ ...prev, screenShareOn: false, localScreenStream: undefined }));
+                   stopStreamTracks(micStream); // Clean up mic stream too
+                   
+                   // Revert back to camera stream if available
+                   if (voiceState.cameraOn && voiceState.localCameraStream) {
+                       connectionsRef.current.forEach((conn, peerId) => {
+                           callPeer(peerId, voiceState.localCameraStream!);
+                       });
+                   }
               };
+              
               setVoiceState(prev => ({ 
                   ...prev, 
                   screenShareOn: true, 
-                  localScreenStream: displayStream 
+                  localScreenStream: combinedStream 
               }));
               
+              // Call peers with new combined stream
+              connectionsRef.current.forEach((conn, peerId) => {
+                   callPeer(peerId, combinedStream);
+              });
+              
           } catch (e) {
-              console.error("Screen share cancelled", e);
+              console.error("Screen share cancelled or failed", e);
           }
       }
   };
@@ -781,7 +967,6 @@ const App: React.FC = () => {
       stopStreamTracks(voiceState.localCameraStream);
       stopStreamTracks(voiceState.localScreenStream);
       
-      // Close all calls
       callsRef.current.forEach(call => call.close());
       callsRef.current.clear();
       
@@ -793,8 +978,11 @@ const App: React.FC = () => {
           screenShareOn: false, 
           localCameraStream: undefined,
           localScreenStream: undefined,
-          remoteStreams: {}
+          remoteStreams: {},
+          peerStatus: {}
       }));
+      
+      setIsCallMinimized(false);
   };
   
   const handleDeviceChange = (type: 'mic' | 'cam' | 'speaker', deviceId: string) => {
@@ -804,10 +992,15 @@ const App: React.FC = () => {
   };
 
   if (!isAuthenticated) {
-      return <AuthScreen onLogin={handleLogin} onRegister={handleRegister} />;
+      return (
+          <>
+            <div className="absolute top-0 left-0 w-full h-8 z-50 titlebar-drag-region" />
+            <AuthScreen onLogin={handleLogin} onRegister={handleRegister} />
+          </>
+      );
   }
 
-  const showCallOverlay = voiceState.connected && voiceState.channelId === activeChannel.id;
+  const showCallOverlay = voiceState.connected && voiceState.channelId === activeChannel.id && !isCallMinimized;
   
   let connectedChannelName = '';
   if (voiceState.connected && voiceState.channelId) {
@@ -818,11 +1011,17 @@ const App: React.FC = () => {
               const ch = s.channels.find(c => c.id === voiceState.channelId);
               if (ch) { connectedChannelName = `${ch.name} / ${s.name}`; break; }
           }
+          // Check DMs
+          const dm = dms.find(d => d.id === voiceState.channelId);
+          if (dm) connectedChannelName = dm.name;
       }
   }
 
+  const channelToDeleteName = chatToDelete ? dms.find(d => d.id === chatToDelete)?.name || 'чат' : '';
+
   return (
     <div className="flex w-full h-screen font-sans text-gray-100 selection:bg-blurple-500 selection:text-white relative z-0" onClick={() => soundService.resumeContext()}>
+      <div className="absolute top-0 left-0 w-full h-8 z-50 titlebar-drag-region" />
       <div className="absolute inset-0 z-0 pointer-events-none bg-black/10" />
 
       <nav className="shrink-0 h-full relative z-20">
@@ -840,13 +1039,14 @@ const App: React.FC = () => {
           currentUser={currentUser}
           voiceState={voiceState}
           connectedChannelName={connectedChannelName}
-          onToggleMute={() => setVoiceState(p => ({...p, muted: !p.muted}))}
-          onToggleDeafen={() => setVoiceState(p => ({...p, deafened: !p.deafened}))}
+          onToggleMute={handleToggleMute}
+          onToggleDeafen={handleToggleDeafen}
           onDisconnect={handleDisconnectVoice}
           onToggleCamera={toggleCamera}
           onToggleScreenShare={toggleScreenShare}
           onChangeStatus={(s) => setCurrentUser(p => ({...p, status: s}))}
           onCreateDM={handleCreateDM}
+          onDeleteDM={setChatToDelete}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenConnectionManager={() => setIsConnectionManagerOpen(true)}
         />
@@ -858,6 +1058,10 @@ const App: React.FC = () => {
                      <Signal size={14} className="text-green-500" />
                      <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">Connected: {activeChannel.name}</span>
                   </div>
+                  
+                  <button onClick={() => setIsCallMinimized(true)} className="absolute top-4 right-16 z-20 bg-black/60 text-white px-3 py-1.5 rounded-full border border-white/10 hover:bg-gray-800 transition-colors text-xs font-medium flex items-center gap-1">
+                      <Minimize2 size={14} />
+                  </button>
                   <button onClick={() => toggleCamera()} className="absolute top-4 right-4 z-20 bg-black/60 text-white px-3 py-1.5 rounded-full border border-white/10 hover:bg-gray-800 transition-colors text-xs font-medium">
                       <MinimizeUI />
                   </button>
@@ -895,6 +1099,9 @@ const App: React.FC = () => {
                                <div className="absolute bottom-4 left-4 bg-black/60 px-3 py-1.5 rounded-lg text-white text-sm font-bold backdrop-blur-md flex items-center gap-2 border border-white/10 z-10">
                                    {currentUser.username} (You)
                                </div>
+                               <div className="absolute bottom-4 right-4 flex gap-1 z-10">
+                                   {voiceState.muted && <div className="p-1.5 bg-red-500/80 rounded-full text-white"><MicOff size={14} /></div>}
+                               </div>
                                <div className={`absolute inset-0 border-4 ${voiceState.muted ? 'border-transparent' : 'border-green-500/50'} rounded-2xl pointer-events-none transition-colors duration-300`} />
                           </div>
 
@@ -902,12 +1109,21 @@ const App: React.FC = () => {
                           {Object.entries(voiceState.remoteStreams).map(([peerId, stream]) => {
                                const remoteUser = p2pUsers[peerId];
                                const name = remoteUser ? remoteUser.username : `User ${peerId.substring(0,5)}`;
+                               const status = voiceState.peerStatus[peerId] || { muted: false, cameraOn: true };
+                               
                                return (
-                                   <RemoteVideoCard key={peerId} stream={stream} peerId={name} volume={volume} />
+                                   <RemoteVideoCard 
+                                       key={peerId} 
+                                       stream={stream} 
+                                       peerId={name} 
+                                       volume={voiceState.deafened ? 0 : volume} 
+                                       isMuted={status.muted}
+                                       isCameraOn={status.cameraOn}
+                                       avatarUrl={remoteUser?.avatarUrl || ''}
+                                   />
                                );
                           })}
 
-                          {/* Placeholder if no remote users */}
                           {Object.keys(voiceState.remoteStreams).length === 0 && (
                             <div className={`relative bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-lg flex flex-col group
                                  ${voiceState.screenShareOn ? 'h-[250px]' : 'min-h-[250px]'} opacity-50
@@ -924,7 +1140,7 @@ const App: React.FC = () => {
                   </div>
                   
                   <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-3 p-2 rounded-2xl bg-gray-900/80 backdrop-blur-2xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 transition-all hover:scale-105 hover:bg-gray-900/90">
-                      <button onClick={() => setVoiceState(p => ({...p, muted: !p.muted}))} className={`p-3.5 rounded-xl transition-all ${voiceState.muted ? 'bg-white text-black shadow-lg hover:bg-gray-200' : 'bg-gray-800/50 hover:bg-gray-700 text-white'}`}>
+                      <button onClick={handleToggleMute} className={`p-3.5 rounded-xl transition-all ${voiceState.muted ? 'bg-white text-black shadow-lg hover:bg-gray-200' : 'bg-gray-800/50 hover:bg-gray-700 text-white'}`}>
                            {voiceState.muted ? <MicOff size={20} /> : <Mic size={20} />}
                       </button>
                       <button onClick={toggleCamera} className={`p-3.5 rounded-xl transition-all ${!voiceState.cameraOn ? 'bg-gray-800/50 hover:bg-gray-700 text-white' : 'bg-white text-black shadow-lg hover:bg-gray-200'}`}>
@@ -980,11 +1196,45 @@ const App: React.FC = () => {
          p2pUsers={p2pUsers}
          onOpenChat={handleOpenP2PChat}
       />
+
+      <DeleteChatModal 
+         isOpen={!!chatToDelete}
+         onClose={() => setChatToDelete(null)}
+         onConfirm={confirmDeleteChat}
+         channelName={channelToDeleteName}
+      />
+
+      {incomingCall && (
+          <IncomingCallModal 
+            caller={p2pUsers[incomingCall.peer] || { username: 'Unknown', avatarUrl: '', id: '', status: 'online' }}
+            onAccept={acceptCall}
+            onDecline={declineCall}
+          />
+      )}
+
+      {voiceState.connected && !showCallOverlay && (
+          <MiniPlayer 
+            currentUser={currentUser}
+            voiceState={voiceState}
+            p2pUsers={p2pUsers}
+            onExpand={() => { 
+                setIsCallMinimized(false); 
+                // Ensure we switch to the channel of the call
+                if (voiceState.channelId) {
+                   setActiveServerId('home');
+                   setActiveChannelId(voiceState.channelId);
+                }
+            }}
+            onDisconnect={handleDisconnectVoice}
+            onToggleMute={handleToggleMute}
+            onToggleCamera={toggleCamera}
+          />
+      )}
     </div>
   );
 };
 
-const RemoteVideoCard = ({ stream, peerId, volume }: { stream: MediaStream, peerId: string, volume: number }) => {
+const RemoteVideoCard = ({ stream, peerId, volume, isMuted, isCameraOn, avatarUrl }: { stream: MediaStream, peerId: string, volume: number, isMuted: boolean, isCameraOn: boolean, avatarUrl: string }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     
     useEffect(() => {
@@ -996,13 +1246,36 @@ const RemoteVideoCard = ({ stream, peerId, volume }: { stream: MediaStream, peer
 
     return (
         <div className="relative bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-lg flex flex-col group min-h-[250px]">
-            <video ref={videoRef} autoPlay className="w-full h-full object-cover" />
+            {/* Show video if remote camera is ON, else show avatar */}
+            {isCameraOn ? (
+                <video ref={videoRef} autoPlay className="w-full h-full object-cover" />
+            ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gray-800">
+                    <img src={avatarUrl} className="w-24 h-24 rounded-full border-4 border-gray-700" alt={peerId} />
+                    {/* Keep hidden video for audio playback */}
+                    <video ref={videoRef} autoPlay className="hidden" /> 
+                </div>
+            )}
+            
             <div className="absolute bottom-4 left-4 bg-black/60 px-3 py-1.5 rounded-lg text-white text-sm font-bold backdrop-blur-md flex items-center gap-2 border border-white/10 z-10">
                 {peerId}
             </div>
+            
+            {/* Status Icons */}
+            <div className="absolute bottom-4 right-4 flex gap-1 z-10">
+                {isMuted && (
+                    <div className="p-1.5 bg-red-500/80 rounded-full text-white backdrop-blur-sm" title="Muted">
+                        <MicOff size={14} />
+                    </div>
+                )}
+            </div>
+
             <div className="absolute top-4 right-4 bg-green-500/20 p-1.5 rounded-md backdrop-blur-sm text-green-400 border border-green-500/30">
                 <Signal size={14} />
             </div>
+            
+            {/* Talking border effect (only if not muted) */}
+            <div className={`absolute inset-0 border-4 ${!isMuted ? 'border-green-500/30' : 'border-transparent'} rounded-2xl pointer-events-none transition-colors duration-300`} />
         </div>
     );
 };

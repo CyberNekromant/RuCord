@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Server, Channel, ChannelType, User } from '../types';
-import { Hash, Volume2, Settings, Mic, Headphones, ChevronDown, Plus, Sparkles, Search, X, UserPlus, PhoneOff, Video, Monitor, MicOff, VideoOff, Signal, Link } from 'lucide-react';
+import { Hash, Volume2, Settings, Mic, Headphones, ChevronDown, Plus, Sparkles, Search, X, UserPlus, PhoneOff, Video, Monitor, MicOff, VideoOff, Signal, Link, Trash2 } from 'lucide-react';
 
 interface ChannelListProps {
   activeServerId: string;
@@ -27,6 +27,7 @@ interface ChannelListProps {
   onToggleScreenShare: () => void;
   onChangeStatus: (status: 'online' | 'idle' | 'dnd' | 'offline') => void;
   onCreateDM: (userId: string) => void;
+  onDeleteDM: (channelId: string) => void;
   onOpenSettings: () => void;
   onOpenConnectionManager: () => void;
 }
@@ -48,6 +49,7 @@ const ChannelList: React.FC<ChannelListProps> = ({
   onToggleScreenShare,
   onChangeStatus,
   onCreateDM,
+  onDeleteDM,
   onOpenSettings,
   onOpenConnectionManager
 }) => {
@@ -152,9 +154,18 @@ const ChannelList: React.FC<ChannelListProps> = ({
                                     <img src={otherUser.avatarUrl} className="w-8 h-8 rounded-full" alt="" />
                                     <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-900 ${getStatusColor(otherUser.status)}`}/>
                                 </div>
-                                <span className="font-medium truncate text-sm">{otherUser.username}</span>
-                                {dm.activeUsers && dm.activeUsers.length > 0 && (
+                                <span className="font-medium truncate text-sm flex-1 text-left">{otherUser.username}</span>
+                                
+                                {dm.activeUsers && dm.activeUsers.length > 0 ? (
                                     <Volume2 size={14} className="ml-auto text-green-500 animate-pulse" />
+                                ) : (
+                                    <div 
+                                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-black/40 rounded text-gray-400 hover:text-red-400"
+                                      onClick={(e) => { e.stopPropagation(); onDeleteDM(dm.id); }}
+                                      title="Удалить чат"
+                                    >
+                                       <Trash2 size={14} />
+                                    </div>
                                 )}
                             </button>
                         );

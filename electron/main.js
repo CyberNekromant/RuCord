@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, shell, desktopCapturer, session } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -52,6 +52,23 @@ function createWindow() {
       return { action: 'deny' };
     }
     return { action: 'allow' };
+  });
+
+  // --- SCREEN SHARE PERMISSION HANDLER ---
+  // Electron needs this to allow getDisplayMedia to work without a custom UI
+  mainWindow.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+      // Grant access to the first screen available
+      // Note: In a real app, you might want to build a UI to let the user select a screen
+      if (sources.length > 0) {
+        callback({ video: sources[0], audio: 'loopback' });
+      } else {
+        callback(null);
+      }
+    }).catch((error) => {
+      console.error(error);
+      callback(null);
+    });
   });
 }
 
