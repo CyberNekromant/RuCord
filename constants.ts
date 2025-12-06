@@ -2,31 +2,26 @@
 import { Server, User, ChannelType, Message, Channel } from './types';
 
 // Логотип приложения: Векторный Неоновый Кот (RuCord Logo)
-// Используем Base64 кодирование, чтобы избежать проблем с символами # и спецсимволами в URL
+// SVG код иконки
 const svgString = `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="32" y="32" width="448" height="448" rx="120" fill="url(#grad)" stroke="white" stroke-width="8" stroke-opacity="0.1"/>
+  <path d="M120 360C100 360 90 340 100 310L140 150C145 130 170 120 190 135L256 180L322 135C342 120 367 130 372 150L412 310C422 340 412 360 392 360H120Z" fill="white" fill-opacity="0.95"/>
+  <circle cx="190" cy="260" r="35" fill="#1e1b4b"/>
+  <circle cx="322" cy="260" r="35" fill="#1e1b4b"/>
+  <circle cx="190" cy="260" r="15" fill="#06b6d4"/>
+  <circle cx="322" cy="260" r="15" fill="#ec4899"/>
+  <path d="M236 320 Q 256 340 276 320" stroke="#1e1b4b" stroke-width="8" stroke-linecap="round"/>
   <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#06b6d4"/>
-      <stop offset="50%" stop-color="#3b82f6"/>
-      <stop offset="100%" stop-color="#ec4899"/>
+    <linearGradient id="grad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#ec4899"/>
     </linearGradient>
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="8" result="blur"/>
-      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
-    </filter>
   </defs>
-  <rect x="32" y="32" width="448" height="448" rx="120" fill="url(#grad)" stroke="#ffffff" stroke-width="8" stroke-opacity="0.1"/>
-  <path fill="#ffffff" d="M 130 340 L 150 160 L 220 230 L 292 230 L 362 160 L 382 340 C 400 410 350 450 256 450 C 162 450 112 410 130 340 Z" filter="url(#glow)"/>
-  <circle cx="200" cy="330" r="28" fill="#1e1b4b"/>
-  <circle cx="312" cy="330" r="28" fill="#1e1b4b"/>
-  <circle cx="200" cy="330" r="12" fill="#06b6d4" filter="url(#glow)"/>
-  <circle cx="312" cy="330" r="12" fill="#06b6d4" filter="url(#glow)"/>
-  <path d="M 245 380 Q 256 390 267 380" fill="none" stroke="#1e1b4b" stroke-width="6" stroke-linecap="round"/>
 </svg>
 `;
 
-// Функция для кодирования в Base64 с поддержкой кириллицы/юникода (на всякий случай)
+// Функция для кодирования в Base64
 const b64 = btoa(unescape(encodeURIComponent(svgString)));
 export const LOGO_URL = `data:image/svg+xml;base64,${b64}`;
 

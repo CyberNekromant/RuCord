@@ -21,11 +21,11 @@ const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<User>(CURRENT_USER);
   
-  // --- Settings State ---
+  // --- Settings State (Persisted) ---
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [selectedMicId, setSelectedMicId] = useState('');
-  const [selectedCamId, setSelectedCamId] = useState('');
-  const [selectedSpeakerId, setSelectedSpeakerId] = useState('');
+  const [selectedMicId, setSelectedMicId] = useState(() => localStorage.getItem('rucord_selected_mic') || '');
+  const [selectedCamId, setSelectedCamId] = useState(() => localStorage.getItem('rucord_selected_cam') || '');
+  const [selectedSpeakerId, setSelectedSpeakerId] = useState(() => localStorage.getItem('rucord_selected_speaker') || '');
   const [volume, setVolume] = useState(1.0); // Global Output Volume
 
   // --- P2P State ---
@@ -45,8 +45,22 @@ const App: React.FC = () => {
   const connectionsRef = useRef<Map<string, DataConnection>>(new Map());
   const callsRef = useRef<Map<string, MediaConnection>>(new Map());
   const [connectedPeers, setConnectedPeers] = useState<string[]>([]);
-  // Store P2P User Profiles
-  const [p2pUsers, setP2pUsers] = useState<Record<string, User>>({});
+  
+  // Store P2P User Profiles (Persisted)
+  const [p2pUsers, setP2pUsers] = useState<Record<string, User>>(() => {
+    try {
+      const saved = localStorage.getItem('rucord_p2p_users');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      console.error("Failed to load P2P users", e);
+      return {};
+    }
+  });
+
+  // Save P2P Users to storage whenever they change (handshake updates)
+  useEffect(() => {
+    localStorage.setItem('rucord_p2p_users', JSON.stringify(p2pUsers));
+  }, [p2pUsers]);
 
   // Fix for "Call answered with old/undefined stream"
   const localStreamRef = useRef<MediaStream | undefined>(undefined);
@@ -269,12 +283,9 @@ const App: React.FC = () => {
           connectionsRef.current.delete(conn.peer);
           setConnectedPeers(prev => prev.filter(p => p !== conn.peer));
           
-          setP2pUsers(prev => {
-              const next = { ...prev };
-              delete next[conn.peer];
-              return next;
-          });
-
+          // NOTE: We do NOT remove the user from p2pUsers on disconnect. 
+          // We want to keep their name/avatar in the UI history.
+          
           setVoiceState(prev => {
               const newStreams = { ...prev.remoteStreams };
               delete newStreams[conn.peer];
@@ -987,9 +998,18 @@ const App: React.FC = () => {
   };
   
   const handleDeviceChange = (type: 'mic' | 'cam' | 'speaker', deviceId: string) => {
-     if (type === 'mic') setSelectedMicId(deviceId);
-     if (type === 'cam') setSelectedCamId(deviceId);
-     if (type === 'speaker') setSelectedSpeakerId(deviceId);
+     if (type === 'mic') {
+       setSelectedMicId(deviceId);
+       localStorage.setItem('rucord_selected_mic', deviceId);
+     }
+     if (type === 'cam') {
+       setSelectedCamId(deviceId);
+       localStorage.setItem('rucord_selected_cam', deviceId);
+     }
+     if (type === 'speaker') {
+       setSelectedSpeakerId(deviceId);
+       localStorage.setItem('rucord_selected_speaker', deviceId);
+     }
   };
 
   if (!isAuthenticated) {
@@ -1333,11 +1353,11 @@ const RemoteVideoCard = ({ stream, peerId, globalVolume, isMuted, isCameraOn, av
                      </button>
                      <input 
                         type="range" 
-                        min="0" max="2" step="0.05"
+                        min="0" max="3" step="0.05"
                         value={localVolume}
                         onChange={(e) => setLocalVolume(parseFloat(e.target.value))}
                         className="flex-1 h-1.5 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-green-500"
-                     />
+                    />
                      <span className="text-xs font-mono w-9 text-right">{Math.round(localVolume * 100)}%</span>
                  </div>
             </div>

@@ -23,8 +23,8 @@ function createWindow() {
       symbolColor: '#ffffff',
       height: 30
     },
-    // autoHideMenuBar: true, // Это для win/linux, titleBarStyle hidden лучше для кастомного UI
-    icon: path.join(__dirname, '../public/icon.png'), 
+    // Указываем путь к иконке. Лучше иметь icon.png, но icon.svg тоже может сработать
+    icon: path.join(__dirname, '../public/icon.svg'), 
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -59,9 +59,9 @@ function createWindow() {
   mainWindow.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
       // Grant access to the first screen available
-      // Note: In a real app, you might want to build a UI to let the user select a screen
       if (sources.length > 0) {
-        callback({ video: sources[0], audio: 'loopback' });
+        // IMPORTANT: audio: false to prevent crashes on Windows if drivers missing
+        callback({ video: sources[0], audio: false });
       } else {
         callback(null);
       }
