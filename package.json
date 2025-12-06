@@ -41,6 +41,7 @@
   "build": {
     "appId": "com.rucord.app",
     "productName": "RuCord",
+    "asar": true,
     "directories": {
       "output": "dist-electron"
     },
@@ -49,13 +50,31 @@
       "electron/**/*"
     ],
     "win": {
-      "target": "nsis"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "RuCord",
+      "runAfterFinish": true
     },
     "mac": {
-      "target": "dmg"
+      "target": "dmg",
+      "icon": "public/icon.png"
     },
     "linux": {
-      "target": "AppImage"
+      "target": "AppImage",
+      "icon": "public/icon.png"
     }
   }
 }

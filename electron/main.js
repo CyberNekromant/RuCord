@@ -1,51 +1,121 @@
-import { app, BrowserWindow, shell, desktopCapturer, session } from 'electron';
+import { app, BrowserWindow, shell, desktopCapturer, session, Tray, Menu, nativeImage, ipcMain } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
+import fs from 'fs';
 
 // Создаем require для работы в ES-модулях
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Определяем пути к файлам в зависимости от режима (Dev/Prod)
+const isDev = !app.isPackaged;
+const iconPath = isDev 
+  ? path.join(__dirname, '../public/icon.png') 
+  : path.join(__dirname, '../dist/icon.png');
+
 let mainWindow;
+let tray = null;
+let isQuitting = false;
+
+// Файл для сохранения состояния окна
+const windowStateFile = path.join(app.getPath('userData'), 'window-state.json');
+
+function saveWindowState() {
+  if (!mainWindow) return;
+  const bounds = mainWindow.getBounds();
+  fs.writeFileSync(windowStateFile, JSON.stringify(bounds));
+}
+
+function loadWindowState() {
+  try {
+    const data = fs.readFileSync(windowStateFile, 'utf8');
+    return JSON.parse(data);
+  } catch (e) {
+    return { width: 1280, height: 800 }; // Default size
+  }
+}
+
+// SINGLE INSTANCE LOCK
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // Если пользователь пытается запустить вторую копию, фокусируемся на первой
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  app.whenReady().then(() => {
+    createWindow();
+    createTray();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  });
+}
 
 function createWindow() {
-  // Create the browser window.
+  const windowState = loadWindowState();
+
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: windowState.width,
+    height: windowState.height,
+    x: windowState.x,
+    y: windowState.y,
     minWidth: 940,
     minHeight: 500,
-    backgroundColor: '#0f1014', // Match the app background to prevent white flash
-    titleBarStyle: 'hidden', // Скрываем нативный заголовок, но оставляем кнопки управления (на Win/Mac)
+    backgroundColor: '#0f1014',
+    titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#0f1014',
       symbolColor: '#ffffff',
       height: 30
     },
-    // Указываем путь к иконке. Лучше иметь icon.png, но icon.svg тоже может сработать
-    icon: path.join(__dirname, '../public/icon.svg'), 
+    icon: iconPath,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      devTools: true,
-      webSecurity: false // Иногда нужно для P2P в локальной разработке, но лучше включить в проде
+      devTools: true, // Можно выключить в проде: isDev
+      webSecurity: false 
     },
+    show: false // Скрываем до полной загрузки, чтобы не моргало
   });
 
-  // Determine if we are in Dev mode or Production
-  const isDev = !app.isPackaged;
-
+  // Загрузка контента
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
-    // Open the DevTools only in dev mode
     mainWindow.webContents.openDevTools();
   } else {
-    // In production, load the built index.html
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
-  // Open external links in the default browser, not inside the app
+  // Показываем окно только когда оно готово
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+  });
+
+  // Сохраняем состояние при закрытии/изменении размера
+  mainWindow.on('resize', saveWindowState);
+  mainWindow.on('move', saveWindowState);
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+      return false;
+    }
+    saveWindowState();
+  });
+
+  // Открытие внешних ссылок в браузере
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http')) {
       shell.openExternal(url);
@@ -54,13 +124,10 @@ function createWindow() {
     return { action: 'allow' };
   });
 
-  // --- SCREEN SHARE PERMISSION HANDLER ---
-  // Electron needs this to allow getDisplayMedia to work without a custom UI
+  // --- SCREEN SHARE HANDLER ---
   mainWindow.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-      // Grant access to the first screen available
       if (sources.length > 0) {
-        // IMPORTANT: audio: false to prevent crashes on Windows if drivers missing
         callback({ video: sources[0], audio: false });
       } else {
         callback(null);
@@ -72,37 +139,59 @@ function createWindow() {
   });
 }
 
-// This method will be called when Electron has finished initialization
-app.whenReady().then(() => {
-  createWindow();
+function createTray() {
+  const icon = nativeImage.createFromPath(iconPath);
+  tray = new Tray(icon);
+  
+  const contextMenu = Menu.buildFromTemplate([
+    { 
+      label: 'Открыть RuCord', 
+      click: () => {
+        if (mainWindow) mainWindow.show();
+      } 
+    },
+    { type: 'separator' },
+    { 
+      label: 'Выход', 
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      } 
+    }
+  ]);
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+  tray.setToolTip('RuCord');
+  tray.setContextMenu(contextMenu);
+
+  tray.on('click', () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
     }
   });
+}
+
+app.on('before-quit', () => {
+  isQuitting = true;
 });
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    app.quit();
+    // Не выходим из приложения, если закрыты окна (работает в фоне)
+    // app.quit(); 
   }
 });
 
-// Permissions handler for Camera/Microphone
+// Permissions handler
 app.on('web-contents-created', (event, contents) => {
-  contents.session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
-    if (permission === 'media' || permission === 'display-capture') {
-      return true;
-    }
+  contents.session.setPermissionCheckHandler((webContents, permission) => {
     return true;
   });
-  
   contents.session.setPermissionRequestHandler((webContents, permission, callback) => {
-    if (permission === 'media' || permission === 'display-capture') {
-      callback(true);
-      return;
-    }
     callback(true);
   });
 });

@@ -137,7 +137,14 @@ const ChannelList: React.FC<ChannelListProps> = ({
                  </div>
                  <div className="space-y-1">
                     {dms.map(dm => {
-                        const otherUser = users[dm.dmUserId!] || users['gemini'];
+                        // Use a fallback object instead of defaulting to 'gemini' if user data hasn't loaded
+                        const otherUser = users[dm.dmUserId!] || { 
+                          id: '?', 
+                          username: 'Загрузка...', 
+                          avatarUrl: '', 
+                          status: 'offline' 
+                        } as User;
+                        
                         const isActive = activeChannelId === dm.id;
                         return (
                             <button
@@ -151,7 +158,7 @@ const ChannelList: React.FC<ChannelListProps> = ({
                             >
                                 {isActive && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blurple-500"></div>}
                                 <div className="relative shrink-0">
-                                    <img src={otherUser.avatarUrl} className="w-8 h-8 rounded-full" alt="" />
+                                    <img src={otherUser.avatarUrl} className="w-8 h-8 rounded-full bg-gray-700" alt="" />
                                     <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-900 ${getStatusColor(otherUser.status)}`}/>
                                 </div>
                                 <span className="font-medium truncate text-sm flex-1 text-left">{otherUser.username}</span>

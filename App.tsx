@@ -21,6 +21,12 @@ const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<User>(CURRENT_USER);
   
+  // Use a ref to access current user inside PeerJS callbacks (closures)
+  const currentUserRef = useRef(currentUser);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+  
   // --- Settings State (Persisted) ---
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedMicId, setSelectedMicId] = useState(() => localStorage.getItem('rucord_selected_mic') || '');
@@ -184,49 +190,82 @@ const App: React.FC = () => {
   // --- P2P Logic Initialization ---
   useEffect(() => {
     if (isAuthenticated && !peerRef.current) {
+       // Function to initialize peer
+       const initPeer = (id: string, isRetry = false) => {
+           console.log("Initializing PeerJS with ID:", id);
+           
+           const peer = new Peer(id, {
+               host: '0.peerjs.com',
+               port: 443,
+               secure: true,
+               config: {
+                   iceServers: [
+                       { urls: 'stun:stun.l.google.com:19302' },
+                       { urls: 'stun:global.stun.twilio.com:3478' }
+                   ]
+               }
+           });
+           
+           peer.on('open', (peerId) => {
+               console.log('My Peer ID:', peerId);
+               setMyPeerId(peerId);
+               // If we are in retry mode and successful, save this new ID
+               if (isRetry) {
+                   localStorage.setItem('rucord_permanent_peer_id', peerId);
+               }
+           });
+    
+           peer.on('connection', (conn) => {
+               console.log('Incoming connection from:', conn.peer);
+               handleIncomingConnection(conn);
+           });
+    
+           peer.on('call', (call) => {
+               console.log('Incoming call from:', call.peer);
+               handleIncomingCallRequest(call); 
+           });
+    
+           peer.on('error', (err) => {
+               console.error('PeerJS Error:', err);
+               if (err.type === 'unavailable-id') {
+                   // ID is taken (ghost session?), try appending a random suffix
+                   console.log('ID taken, trying fallback...');
+                   peer.destroy();
+                   const baseId = localStorage.getItem('rucord_permanent_peer_id') || 'user_random';
+                   const newId = baseId + '_' + Math.floor(Math.random() * 1000);
+                   setTimeout(() => initPeer(newId, true), 500);
+               } else if (err.type === 'peer-unavailable') {
+                   // Just a connection error to a specific peer
+                   // Don't disconnect self
+               } else {
+                   setConnectionStatus(ConnectionState.DISCONNECTED);
+               }
+           });
+
+           peerRef.current = peer;
+       };
+
        let persistentId = localStorage.getItem('rucord_permanent_peer_id');
        if (!persistentId) {
            persistentId = 'user_' + Math.random().toString(36).substr(2, 9);
            localStorage.setItem('rucord_permanent_peer_id', persistentId);
        }
-
-       console.log("Initializing PeerJS with ID:", persistentId);
-
-       const peer = new Peer(persistentId, {
-           host: '0.peerjs.com',
-           port: 443,
-           secure: true,
-           config: {
-               iceServers: [
-                   { urls: 'stun:stun.l.google.com:19302' },
-                   { urls: 'stun:global.stun.twilio.com:3478' }
-               ]
-           }
-       });
        
-       peer.on('open', (id) => {
-           console.log('My Peer ID:', id);
-           setMyPeerId(id);
-       });
-
-       peer.on('connection', (conn) => {
-           console.log('Incoming connection from:', conn.peer);
-           handleIncomingConnection(conn);
-       });
-
-       peer.on('call', (call) => {
-           console.log('Incoming call from:', call.peer);
-           handleIncomingCallRequest(call); 
-       });
-
-       peer.on('error', (err) => {
-           console.error('PeerJS Error:', err);
-           if (err.type === 'peer-unavailable') {
-               setConnectionStatus(ConnectionState.DISCONNECTED);
+       initPeer(persistentId);
+       
+       // Cleanup on unmount/close
+       const cleanup = () => {
+           if (peerRef.current) {
+               peerRef.current.destroy();
+               peerRef.current = null;
            }
-       });
+       };
 
-       peerRef.current = peer;
+       window.addEventListener('beforeunload', cleanup);
+       return () => {
+           window.removeEventListener('beforeunload', cleanup);
+           cleanup();
+       };
     }
   }, [isAuthenticated]);
 
@@ -245,8 +284,9 @@ const App: React.FC = () => {
           setConnectedPeers(prev => [...prev, conn.peer]);
           setConnectionStatus(ConnectionState.CONNECTED);
           
-          // Send handshake
-          conn.send({ type: 'handshake', user: currentUser });
+          // Send handshake using REF to ensure latest data is sent (not stale closure)
+          conn.send({ type: 'handshake', user: currentUserRef.current });
+          
           // Send current call status
           conn.send({ 
               type: 'status_update', 
@@ -262,6 +302,9 @@ const App: React.FC = () => {
       conn.on('data', (data: any) => {
           if (data.type === 'message') {
               receiveP2PMessage(data.message, conn.peer);
+          } else if (data.type === 'request_handshake') {
+              // Peer is requesting our profile, send it immediately
+              conn.send({ type: 'handshake', user: currentUserRef.current });
           } else if (data.type === 'handshake') {
               setP2pUsers(prev => ({
                   ...prev,
@@ -314,6 +357,23 @@ const App: React.FC = () => {
       // this is likely a stream renegotiation (camera toggle).
       const existingCall = callsRef.current.get(call.peer);
       
+      // Ensure caller is registered in p2pUsers so we have a name/avatar
+      if (!p2pUsers[call.peer]) {
+          const placeholderUser: User = {
+            id: call.peer,
+            username: `User ${call.peer.slice(0, 4)}`,
+            avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${call.peer}`,
+            status: 'online'
+          };
+          setP2pUsers(prev => ({ ...prev, [call.peer]: placeholderUser }));
+          
+          // Request actual profile via data connection if possible
+          const conn = connectionsRef.current.get(call.peer);
+          if (conn && conn.open) {
+              conn.send({ type: 'request_handshake' });
+          }
+      }
+      
       // Also check if we are in a call generally to avoid "stale" state issues
       if (existingCall && existingCall.open) {
           console.log("Auto-answering renegotiation from", call.peer);
@@ -350,9 +410,11 @@ const App: React.FC = () => {
           
           const stream = await navigator.mediaDevices.getUserMedia(constraints);
           
+          // Ensure we have user data, otherwise fallback
+          const caller = p2pUsers[incomingCall.peer] || { username: 'Unknown User', id: incomingCall.peer };
+          
           // Generate Deterministic DM ID for this peer
           const dmId = getP2PDMId(currentUser.id, incomingCall.peer);
-          const caller = p2pUsers[incomingCall.peer] || { username: 'Unknown User', id: incomingCall.peer };
 
           // Ensure DM Channel exists so we can switch to it
           setDms(prev => {
@@ -452,11 +514,35 @@ const App: React.FC = () => {
   const receiveP2PMessage = (msg: Message, senderPeerId: string) => {
       soundService.play('message');
       
+      // Auto-register unknown user if not in p2pUsers
+      if (!p2pUsers[senderPeerId]) {
+         const placeholderUser: User = {
+             id: msg.userId,
+             username: `User ${senderPeerId.slice(0, 4)}`,
+             avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${msg.userId}`,
+             status: 'online'
+         };
+         setP2pUsers(prev => ({ ...prev, [senderPeerId]: placeholderUser }));
+         
+         // REQUEST HANDSHAKE: Ask them to send their real profile
+         const conn = connectionsRef.current.get(senderPeerId);
+         if (conn && conn.open) {
+             conn.send({ type: 'request_handshake' });
+         }
+      }
+
       setDms(prevDms => {
           const exists = prevDms.find(d => d.id === msg.channelId);
           if (exists) return prevDms;
 
-          const senderUser = p2pUsers[senderPeerId] || { id: msg.userId, username: 'Unknown User', avatarUrl: '', status: 'online' };
+          // If we just registered them, they might not be in the closure 'p2pUsers' yet, 
+          // but we can construct a fallback or use the new one next render.
+          const senderUser = p2pUsers[senderPeerId] || { 
+              id: msg.userId, 
+              username: `User ${senderPeerId.slice(0,4)}`, 
+              avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${msg.userId}`,
+              status: 'online' 
+          };
           
           const newDM: Channel = {
               id: msg.channelId,
@@ -1255,14 +1341,14 @@ const App: React.FC = () => {
   );
 };
 
-// --- REMOTE VIDEO CARD WITH 200% VOLUME LOGIC ---
+// --- REMOTE VIDEO CARD WITH 300% VOLUME LOGIC ---
 const RemoteVideoCard = ({ stream, peerId, globalVolume, isMuted, isCameraOn, avatarUrl }: { stream: MediaStream, peerId: string, globalVolume: number, isMuted: boolean, isCameraOn: boolean, avatarUrl: string }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const audioCtxRef = useRef<AudioContext | null>(null);
     const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
     const gainRef = useRef<GainNode | null>(null);
 
-    // Per-user volume state (default 100%, can go to 200%)
+    // Per-user volume state (default 100%, can go to 300%)
     const [localVolume, setLocalVolume] = useState(1.0);
     const [isHovering, setIsHovering] = useState(false);
 
