@@ -410,8 +410,18 @@ const App: React.FC = () => {
           
           const stream = await navigator.mediaDevices.getUserMedia(constraints);
           
-          // Ensure we have user data, otherwise fallback
-          const caller = p2pUsers[incomingCall.peer] || { username: 'Unknown User', id: incomingCall.peer };
+          // FIX: Ensure we have user data in p2pUsers state, otherwise create fallback immediately and SAVE IT
+          let caller = p2pUsers[incomingCall.peer];
+          if (!caller) {
+              caller = { 
+                  username: 'Unknown User', 
+                  id: incomingCall.peer,
+                  avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${incomingCall.peer}`,
+                  status: 'online'
+              };
+              // Force update state so UI can find it later
+              setP2pUsers(prev => ({ ...prev, [incomingCall.peer]: caller }));
+          }
           
           // Generate Deterministic DM ID for this peer
           const dmId = getP2PDMId(currentUser.id, incomingCall.peer);

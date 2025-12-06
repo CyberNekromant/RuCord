@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Channel, Message, User, ChannelType } from '../types';
 import { format } from 'date-fns';
-import { ru } from 'date-fns/locale';
+import ru from 'date-fns/locale/ru';
 import { Hash, Gift, Smile, PlusCircle, SendHorizontal, Sparkles, Bot, Pencil, Trash2, Reply, X, CornerDownRight, Paperclip, File as FileIcon, Phone, Video } from 'lucide-react';
 import { generateAIResponse, summarizeChat, explainText } from '../services/geminiService';
 
@@ -158,6 +158,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const otherUserId = isDM ? channel.dmUserId : null;
   const otherUser = otherUserId ? users[otherUserId] : null;
 
+  // Fallback for DM header name if user object isn't loaded yet
+  const headerName = isDM ? (otherUser ? otherUser.username : channel.name) : channel.name;
+
   return (
     <div className="flex flex-col h-full min-w-0 min-h-0 relative bg-transparent">
       <input type="file" ref={fileInputRef} hidden onChange={handleFileSelect} />
@@ -165,29 +168,38 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       {/* Header */}
       <div className="h-16 px-6 flex items-center justify-between shrink-0 z-10 glass-header">
         <div className="flex items-center gap-3 overflow-hidden">
-          {isDM && otherUser ? (
+          {isDM ? (
              <div className="relative shrink-0 group cursor-pointer">
-                <img 
-                  src={otherUser.avatarUrl} 
-                  className="w-10 h-10 rounded-full object-cover border border-white/10 shadow-sm transition-transform group-hover:scale-105" 
-                  alt={otherUser.username} 
-                />
-                <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-900 
-                    ${otherUser.status === 'online' ? 'bg-green-500' : 
-                      otherUser.status === 'idle' ? 'bg-yellow-500' :
-                      otherUser.status === 'dnd' ? 'bg-red-500' : 'bg-gray-500'}`} 
-                />
+                {otherUser ? (
+                  <>
+                    <img 
+                      src={otherUser.avatarUrl} 
+                      className="w-10 h-10 rounded-full object-cover border border-white/10 shadow-sm transition-transform group-hover:scale-105" 
+                      alt={headerName} 
+                    />
+                    <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-900 
+                        ${otherUser.status === 'online' ? 'bg-green-500' : 
+                          otherUser.status === 'idle' ? 'bg-yellow-500' :
+                          otherUser.status === 'dnd' ? 'bg-red-500' : 'bg-gray-500'}`} 
+                    />
+                  </>
+                ) : (
+                   // Fallback Avatar
+                   <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-white font-bold">
+                     {headerName.substring(0, 1).toUpperCase()}
+                   </div>
+                )}
              </div>
           ) : (
              <div className="w-10 h-10 bg-gray-700/50 rounded-lg flex items-center justify-center text-gray-400 shrink-0">
-               {isDM ? <span className="font-bold text-lg">@</span> : <Hash size={20} />}
+               <Hash size={20} />
              </div>
           )}
           
           <div className="flex flex-col">
               <div className="flex items-center gap-2">
                   <h3 className="font-bold text-white truncate text-lg tracking-tight">
-                      {isDM && otherUser ? otherUser.username : channel.name}
+                      {headerName}
                   </h3>
                   {channel.name === 'ai-chat' && <span className="text-[10px] bg-gradient-to-r from-blurple-600 to-purple-600 text-white px-2 py-0.5 rounded-full font-bold shadow-lg shadow-blurple-500/20">AI</span>}
                   {isDM && otherUser?.isBot && <span className="bg-blurple-500 text-white text-[10px] px-1.5 rounded flex items-center h-4 leading-none uppercase font-bold shadow-sm">Bot</span>}
@@ -226,13 +238,13 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             {/* Welcome / Empty State */}
             {messages.length === 0 && (
                 <div className="mt-4 mb-8 mx-4">
-                    {isDM && otherUser ? (
+                    {isDM ? (
                         <div className="flex flex-col items-start">
                             <div className="w-24 h-24 rounded-full mb-4 p-1 bg-gradient-to-br from-blurple-500 to-pink-500">
-                                <img src={otherUser.avatarUrl} className="w-full h-full rounded-full border-4 border-gray-900" />
+                                <img src={otherUser?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${channel.id}`} className="w-full h-full rounded-full border-4 border-gray-900 bg-gray-800" />
                             </div>
-                            <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400 mb-2">{otherUser.username}</h1>
-                            <p className="text-gray-400 text-lg">Начало вашей легендарной истории с @{otherUser.username}.</p>
+                            <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400 mb-2">{headerName}</h1>
+                            <p className="text-gray-400 text-lg">Начало вашей легендарной истории с @{headerName}.</p>
                         </div>
                     ) : (
                         <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 border border-white/5 p-8 rounded-3xl backdrop-blur-sm">
@@ -457,7 +469,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             autoComplete="off"
-            placeholder={editingMessageId ? "Редактировать сообщение..." : `Написать в ${isDM && otherUser ? '@' + otherUser.username : '#' + channel.name}`}
+            placeholder={editingMessageId ? "Редактировать сообщение..." : `Написать в ${isDM ? '@' + headerName : '#' + channel.name}`}
             className="flex-1 bg-transparent text-gray-100 placeholder-gray-500 focus:outline-none font-medium h-10"
           />
           <div className="flex items-center gap-1 ml-2">
