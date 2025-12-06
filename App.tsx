@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import ServerList from './components/ServerList';
 import ChannelList from './components/ChannelList';
@@ -11,7 +12,7 @@ import MiniPlayer from './components/MiniPlayer';
 import DeleteChatModal from './components/DeleteChatModal';
 import { INITIAL_SERVERS, INITIAL_MESSAGES, MOCK_USERS, CURRENT_USER, GEMINI_BOT, INITIAL_DMS } from './constants';
 import { ChannelType, Message, User, Channel, ConnectionState } from './types';
-import { Mic, Video, PhoneOff, MicOff, VideoOff, ScreenShare, Wifi, Signal, Minimize2 } from 'lucide-react';
+import { Mic, Video, PhoneOff, MicOff, VideoOff, ScreenShare, Wifi, Signal, Minimize2, Volume2, Volume1, VolumeX } from 'lucide-react';
 import { soundService } from './services/soundService';
 import { Peer, DataConnection, MediaConnection } from 'peerjs';
 
@@ -25,7 +26,7 @@ const App: React.FC = () => {
   const [selectedMicId, setSelectedMicId] = useState('');
   const [selectedCamId, setSelectedCamId] = useState('');
   const [selectedSpeakerId, setSelectedSpeakerId] = useState('');
-  const [volume, setVolume] = useState(1.0);
+  const [volume, setVolume] = useState(1.0); // Global Output Volume
 
   // --- P2P State ---
   const [isConnectionManagerOpen, setIsConnectionManagerOpen] = useState(false);
@@ -1116,7 +1117,7 @@ const App: React.FC = () => {
                                        key={peerId} 
                                        stream={stream} 
                                        peerId={name} 
-                                       volume={voiceState.deafened ? 0 : volume} 
+                                       globalVolume={voiceState.deafened ? 0 : volume} 
                                        isMuted={status.muted}
                                        isCameraOn={status.cameraOn}
                                        avatarUrl={remoteUser?.avatarUrl || ''}
@@ -1234,26 +1235,89 @@ const App: React.FC = () => {
   );
 };
 
-const RemoteVideoCard = ({ stream, peerId, volume, isMuted, isCameraOn, avatarUrl }: { stream: MediaStream, peerId: string, volume: number, isMuted: boolean, isCameraOn: boolean, avatarUrl: string }) => {
+// --- REMOTE VIDEO CARD WITH 200% VOLUME LOGIC ---
+const RemoteVideoCard = ({ stream, peerId, globalVolume, isMuted, isCameraOn, avatarUrl }: { stream: MediaStream, peerId: string, globalVolume: number, isMuted: boolean, isCameraOn: boolean, avatarUrl: string }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
-    
+    const audioCtxRef = useRef<AudioContext | null>(null);
+    const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+    const gainRef = useRef<GainNode | null>(null);
+
+    // Per-user volume state (default 100%, can go to 200%)
+    const [localVolume, setLocalVolume] = useState(1.0);
+    const [isHovering, setIsHovering] = useState(false);
+
+    // Initialize Web Audio API for amplification
+    useEffect(() => {
+        if (!stream) return;
+
+        // Cleanup function to close context
+        const cleanup = () => {
+            if (audioCtxRef.current) {
+                audioCtxRef.current.close().catch(console.error);
+                audioCtxRef.current = null;
+            }
+        };
+
+        try {
+            cleanup();
+            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+            const ctx = new AudioContextClass();
+            const source = ctx.createMediaStreamSource(stream);
+            const gainNode = ctx.createGain();
+
+            source.connect(gainNode);
+            gainNode.connect(ctx.destination);
+
+            audioCtxRef.current = ctx;
+            sourceRef.current = source;
+            gainRef.current = gainNode;
+
+            // Apply initial volume
+            gainNode.gain.value = localVolume * globalVolume;
+
+            // Mute the video element itself to avoid echo (we are playing audio via AudioContext)
+            if (videoRef.current) {
+                videoRef.current.muted = true;
+            }
+        } catch (e) {
+            console.error("Web Audio API Error:", e);
+        }
+
+        return cleanup;
+    }, [stream]); // Re-init if stream changes
+
+    // Update volume when local slider or global settings change
+    useEffect(() => {
+        if (gainRef.current && audioCtxRef.current) {
+            // Formula: local (0-2) * global (0-1)
+            const finalVol = localVolume * globalVolume;
+            gainRef.current.gain.setTargetAtTime(finalVol, audioCtxRef.current.currentTime, 0.1);
+        }
+    }, [localVolume, globalVolume]);
+
+    // Handle video element stream assignment (for visuals)
     useEffect(() => {
         if (videoRef.current) {
             videoRef.current.srcObject = stream;
-            videoRef.current.volume = volume;
+            // IMPORTANT: Mute the element because we process audio via Web Audio API
+            videoRef.current.muted = true; 
         }
-    }, [stream, volume]);
+    }, [stream]);
 
     return (
-        <div className="relative bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-lg flex flex-col group min-h-[250px]">
+        <div 
+            className="relative bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-lg flex flex-col group min-h-[250px]"
+            onMouseEnter={() => setIsHovering(true)}
+            onMouseLeave={() => setIsHovering(false)}
+        >
             {/* Show video if remote camera is ON, else show avatar */}
             {isCameraOn ? (
-                <video ref={videoRef} autoPlay className="w-full h-full object-cover" />
+                <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
             ) : (
                 <div className="w-full h-full flex items-center justify-center bg-gray-800">
                     <img src={avatarUrl} className="w-24 h-24 rounded-full border-4 border-gray-700" alt={peerId} />
-                    {/* Keep hidden video for audio playback */}
-                    <video ref={videoRef} autoPlay className="hidden" /> 
+                    {/* Hidden video ref needed for srcObject assignment */}
+                    <video ref={videoRef} autoPlay playsInline className="hidden" /> 
                 </div>
             )}
             
@@ -1261,6 +1325,23 @@ const RemoteVideoCard = ({ stream, peerId, volume, isMuted, isCameraOn, avatarUr
                 {peerId}
             </div>
             
+            {/* Volume Control Overlay */}
+            <div className={`absolute bottom-16 left-4 right-4 bg-black/80 backdrop-blur-md p-3 rounded-xl border border-white/10 transition-all duration-300 transform ${isHovering ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0 pointer-events-none'} z-20`}>
+                 <div className="flex items-center gap-3">
+                     <button onClick={() => setLocalVolume(localVolume === 0 ? 1 : 0)} className="text-gray-400 hover:text-white">
+                        {localVolume === 0 ? <VolumeX size={16} /> : localVolume > 1 ? <Volume2 size={16} className="text-green-400" /> : <Volume1 size={16} />}
+                     </button>
+                     <input 
+                        type="range" 
+                        min="0" max="2" step="0.05"
+                        value={localVolume}
+                        onChange={(e) => setLocalVolume(parseFloat(e.target.value))}
+                        className="flex-1 h-1.5 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-green-500"
+                     />
+                     <span className="text-xs font-mono w-9 text-right">{Math.round(localVolume * 100)}%</span>
+                 </div>
+            </div>
+
             {/* Status Icons */}
             <div className="absolute bottom-4 right-4 flex gap-1 z-10">
                 {isMuted && (
